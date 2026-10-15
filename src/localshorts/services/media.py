@@ -151,8 +151,297 @@ def clean_temporary_cache(include_media_cache: bool = False) -> dict[str, Any]:
     }
 
 
+def format_image_for_vertical_short(img_bytes: bytes, out_path: Path) -> bool:
+    """Format an image into 1080x1920 vertical canvas with blurred background and centered sharp foreground."""
+    try:
+        import io
+
+        from PIL import Image, ImageFilter
+
+        with Image.open(io.BytesIO(img_bytes)) as img:
+            img = img.convert("RGB")
+            target_w, target_h = 1080, 1920
+            w, h = img.size
+
+            canvas = Image.new("RGB", (target_w, target_h), (18, 20, 28))
+
+            # Background fill + blur
+            bg_scale = max(target_w / float(w), target_h / float(h))
+            bg_w, bg_h = max(1, int(round(w * bg_scale))), max(1, int(round(h * bg_scale)))
+            bg = img.resize((bg_w, bg_h), Image.Resampling.LANCZOS)
+            left = max(0, (bg_w - target_w) // 2)
+            top = max(0, (bg_h - target_h) // 2)
+            bg_cropped = bg.crop((left, top, left + target_w, top + target_h)).filter(
+                ImageFilter.GaussianBlur(24)
+            )
+            canvas.paste(bg_cropped, (0, 0))
+
+            # Foreground fit centered
+            fg_scale = min(target_w / float(w), target_h / float(h))
+            fg_w, fg_h = max(1, int(round(w * fg_scale))), max(1, int(round(h * fg_scale)))
+            fg = img.resize((fg_w, fg_h), Image.Resampling.LANCZOS)
+            fg_x = (target_w - fg_w) // 2
+            fg_y = (target_h - fg_h) // 2
+            canvas.paste(fg, (fg_x, fg_y))
+
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            canvas.save(str(out_path), "JPEG", quality=92)
+            return True
+    except Exception as exc:
+        logger.warning("Failed to format image to vertical short: %s", exc)
+        return False
+
+
 class MediaService:
     """Resolves licensed/local visual assets for scenes with SHA-256 caching and procedural fallback."""
+
+    def generate_chatgpt_asset_search_prompt(
+        self,
+        topic: str,
+        headline: str,
+        script_text: str,
+        scenes: Sequence[ScenePlanItemSchema],
+    ) -> str:
+        """
+        Generate an optimized search and asset curation prompt specifically for ChatGPT Plus
+        (utilizing ChatGPT Web Search and DALL-E 3) to find or generate visual assets for each scene.
+        """
+        prompt_lines = [
+            "# YouTube Shorts Creative Asset Research — LocalShorts Studio",
+            f"**Topic**: {topic}",
+            f"**Headline**: {headline or topic}",
+            f"**Full Narration Script**:\n\"{script_text.strip()}\"\n",
+            "## Scene Breakdown & Visual Needs:",
+        ]
+        for s in scenes:
+            start_val = getattr(s, "start", getattr(s, "start_s", 0.0))
+            end_val = getattr(s, "end", getattr(s, "end_s", 0.0))
+            spoken_val = getattr(s, "spoken_text", getattr(s, "caption_text", ""))
+            prompt_lines.append(
+                f"- **Scene {s.scene_index}** ({start_val:.1f}s – {end_val:.1f}s):\n"
+                f"  - Spoken words: \"{spoken_val}\"\n"
+                f"  - Target concept: {s.visual_query}\n"
+                f"  - Preferred visual type: {s.visual_type}"
+            )
+
+        prompt_lines.extend(
+            [
+                "",
+                "## Instructions for ChatGPT Plus:",
+                "1. **Stock Media Search**: Using your Web Search capability, search for direct, copyright-free / royalty-free high-resolution vertical or horizontal image or B-roll video URLs (from Wikimedia Commons, Pexels, Pixabay, Unsplash, or Internet Archive) matching each scene.",
+                "2. **Custom AI Art (DALL-E 3)**: For scenes needing dramatic illustrative or futuristic visuals, generate a high-retention 9:16 vertical image using DALL-E 3, or provide the exact DALL-E prompt.",
+                "3. **Format**: For each scene, return:",
+                "   `Scene [number]: [Direct Image URL or DALL-E link]`",
+                "",
+                "Please output the curated assets now.",
+            ]
+        )
+        return "\n".join(prompt_lines)
+
+    async def fetch_pexels_image(
+        self,
+        query: str,
+        api_key: str,
+        cache_limit_gb: float = 15.0,
+    ) -> dict[str, str] | None:
+        """Fetch a free vertical stock photo from Pexels API."""
+        if not api_key or not query.strip():
+            return None
+        url = "https://api.pexels.com/v1/search"
+        headers = {"Authorization": api_key.strip()}
+        params = {"query": query.strip(), "orientation": "portrait", "per_page": "3"}
+        try:
+            async with httpx.AsyncClient(timeout=8.0, headers=headers) as client:
+                res = await client.get(url, params=params)
+                if res.status_code != 200:
+                    return None
+                data = res.json()
+                photos = data.get("photos", [])
+                if not photos:
+                    return None
+                photo = photos[0]
+                img_url = photo.get("src", {}).get("large2x") or photo.get("src", {}).get("large")
+                if not img_url:
+                    return None
+                img_resp = await client.get(img_url)
+                if img_resp.status_code != 200:
+                    return None
+                sha = compute_sha256_bytes(img_resp.content)
+                local_file = MEDIA_CACHE_DIR / sha[:2] / f"{sha}.jpg"
+                format_image_for_vertical_short(img_resp.content, local_file)
+                photographer = photo.get("photographer", "Pexels Creator")
+                attribution = f"Pexels / {photographer} (Free License)"
+                return {
+                    "local_path": str(local_file),
+                    "attribution": attribution,
+                    "license": "Pexels Free License",
+                    "source_url": img_url,
+                    "provider": "pexels",
+                }
+        except Exception as exc:
+            logger.debug("Pexels lookup skipped for '%s': %s", query, exc)
+            return None
+
+    async def fetch_pixabay_image(
+        self,
+        query: str,
+        api_key: str,
+        cache_limit_gb: float = 15.0,
+    ) -> dict[str, str] | None:
+        """Fetch a free vertical stock photo from Pixabay API."""
+        if not api_key or not query.strip():
+            return None
+        url = "https://pixabay.com/api/"
+        params = {
+            "key": api_key.strip(),
+            "q": query.strip(),
+            "image_type": "photo",
+            "orientation": "vertical",
+            "per_page": "3",
+            "safesearch": "true",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                res = await client.get(url, params=params)
+                if res.status_code != 200:
+                    return None
+                hits = res.json().get("hits", [])
+                if not hits:
+                    return None
+                hit = hits[0]
+                img_url = hit.get("largeImageURL") or hit.get("webformatURL")
+                if not img_url:
+                    return None
+                img_resp = await client.get(img_url)
+                if img_resp.status_code != 200:
+                    return None
+                sha = compute_sha256_bytes(img_resp.content)
+                local_file = MEDIA_CACHE_DIR / sha[:2] / f"{sha}.jpg"
+                format_image_for_vertical_short(img_resp.content, local_file)
+                user = hit.get("user", "Pixabay Contributor")
+                attribution = f"Pixabay / {user} (Content License)"
+                return {
+                    "local_path": str(local_file),
+                    "attribution": attribution,
+                    "license": "Pixabay Free License",
+                    "source_url": img_url,
+                    "provider": "pixabay",
+                }
+        except Exception as exc:
+            logger.debug("Pixabay lookup skipped for '%s': %s", query, exc)
+            return None
+
+    async def import_chatgpt_assets_text(
+        self,
+        text: str,
+        scenes: list[ScenePlanItemSchema],
+        target_dir: Path,
+    ) -> tuple[list[ScenePlanItemSchema], list[dict[str, str]]]:
+        """
+        Parse media URLs from ChatGPT Plus responses or direct lists, download them,
+        format to vertical 1080x1920, and bind them to the respective scenes.
+        """
+        url_pattern = re.compile(r"https?://[^\s<>'\"\)\]]+")
+        raw_urls = url_pattern.findall(text)
+        if not raw_urls:
+            return scenes, []
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        imported_attributions: list[dict[str, str]] = []
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        }
+
+        async with httpx.AsyncClient(timeout=15.0, headers=headers, follow_redirects=True) as client:
+            for idx, raw_url in enumerate(raw_urls):
+                if idx >= len(scenes):
+                    break
+                try:
+                    validate_external_url(raw_url)
+                    resp = await client.get(raw_url)
+                    if resp.status_code != 200 or len(resp.content) < 3_000:
+                        continue
+                    out_file = target_dir / f"chatgpt_scene_{idx + 1}.jpg"
+                    ok = format_image_for_vertical_short(resp.content, out_file)
+                    if ok and out_file.exists():
+                        scenes[idx].media_asset_path = str(out_file)
+                        scenes[idx].visual_type = "media_composite"
+                        scenes[idx].media_attribution = f"ChatGPT Plus / Curated Asset (Scene {idx + 1})"
+                        imported_attributions.append(
+                            {
+                                "scene_index": str(scenes[idx].scene_index),
+                                "provider": "chatgpt_plus",
+                                "source_url": raw_url,
+                                "path": str(out_file),
+                                "attribution": scenes[idx].media_attribution,
+                                "license": "Curated Royalty-Free",
+                            }
+                        )
+                except Exception as e:
+                    logger.warning("Failed to import asset for scene %d from %s: %s", idx + 1, raw_url, e)
+
+        return scenes, imported_attributions
+
+    async def search_and_generate_assets_openai(
+        self,
+        topic: str,
+        scenes: list[ScenePlanItemSchema],
+        target_dir: Path,
+        api_key: str,
+        model: str = "gpt-4o-mini",
+        generate_dalle: bool = False,
+    ) -> tuple[list[ScenePlanItemSchema], list[dict[str, str]]]:
+        """
+        Direct automated asset search and DALL-E generation using OpenAI API credentials.
+        """
+        if not api_key:
+            return scenes, []
+        try:
+            from openai import AsyncOpenAI
+
+            client = AsyncOpenAI(api_key=api_key.strip())
+            attributions: list[dict[str, str]] = []
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+            if generate_dalle:
+                for idx, sc in enumerate(scenes[:4]):  # Max 4 DALL-E calls to avoid cost
+                    try:
+                        dalle_prompt = f"Vertical 9:16 cinematic documentary shot, hyper-realistic, high resolution: {sc.visual_query}. Dynamic lighting, creator studio aesthetic."
+                        resp = await client.images.generate(
+                            model="dall-e-3",
+                            prompt=dalle_prompt,
+                            size="1024x1792",
+                            quality="standard",
+                            n=1,
+                        )
+                        if resp.data and resp.data[0].url:
+                            img_url = resp.data[0].url
+                            async with httpx.AsyncClient(timeout=20.0) as http_c:
+                                img_resp = await http_c.get(img_url)
+                                if img_resp.status_code == 200:
+                                    out_path = target_dir / f"dalle_scene_{idx + 1}.jpg"
+                                    format_image_for_vertical_short(img_resp.content, out_path)
+                                    sc.media_asset_path = str(out_path)
+                                    sc.visual_type = "media_composite"
+                                    sc.media_attribution = "DALL-E 3 / AI Generated Visual"
+                                    attributions.append(
+                                        {
+                                            "scene_index": str(sc.scene_index),
+                                            "provider": "openai_dalle3",
+                                            "source_url": img_url,
+                                            "path": str(out_path),
+                                            "attribution": sc.media_attribution,
+                                            "license": "AI Generated (User Owned)",
+                                        }
+                                    )
+                    except Exception as exc:
+                        logger.warning("DALL-E generation error for scene %d: %s", idx + 1, exc)
+
+            return scenes, attributions
+        except Exception as exc:
+            logger.warning("OpenAI asset generation failed: %s", exc)
+            return scenes, []
 
     def find_authorized_local_media(
         self,
@@ -308,16 +597,18 @@ class MediaService:
         scenes: Sequence[ScenePlanItemSchema],
         enable_wikimedia: bool = True,
         authorized_media_dir: str = "",
+        pexels_api_key: str = "",
+        pixabay_api_key: str = "",
         cache_limit_gb: float = 15.0,
     ) -> tuple[list[ScenePlanItemSchema], list[dict[str, str]]]:
         """
-        Attach local Authorized Media or Wikimedia Commons licensed stills to `media_composite`
-        scenes while keeping procedural graphics as the primary/fallback engine.
+        Attach local Authorized Media, Pexels, Pixabay, or Wikimedia Commons licensed stills
+        to `media_composite` scenes while keeping procedural graphics as the primary/fallback engine.
         Returns (updated_scenes, media_attributions).
         """
         attributions: list[dict[str, str]] = []
         for scene in scenes:
-            # First check user-owned Authorized Media
+            # 1. First check user-owned Authorized Media
             local_match = self.find_authorized_local_media(scene.visual_query, custom_dir=authorized_media_dir)
             if local_match:
                 scene.media_asset_path, scene.media_attribution = local_match
@@ -332,6 +623,41 @@ class MediaService:
                 )
                 continue
 
+            # 2. Check Pexels API if key provided
+            if pexels_api_key and scene.visual_type == "media_composite":
+                pexels_asset = await self.fetch_pexels_image(scene.visual_query, api_key=pexels_api_key, cache_limit_gb=cache_limit_gb)
+                if pexels_asset:
+                    scene.media_asset_path = pexels_asset["local_path"]
+                    scene.media_attribution = pexels_asset["attribution"]
+                    attributions.append(
+                        {
+                            "scene_index": str(scene.scene_index),
+                            "provider": pexels_asset["provider"],
+                            "source_url": pexels_asset["source_url"],
+                            "attribution": pexels_asset["attribution"],
+                            "license": pexels_asset["license"],
+                        }
+                    )
+                    continue
+
+            # 3. Check Pixabay API if key provided
+            if pixabay_api_key and scene.visual_type == "media_composite":
+                pixabay_asset = await self.fetch_pixabay_image(scene.visual_query, api_key=pixabay_api_key, cache_limit_gb=cache_limit_gb)
+                if pixabay_asset:
+                    scene.media_asset_path = pixabay_asset["local_path"]
+                    scene.media_attribution = pixabay_asset["attribution"]
+                    attributions.append(
+                        {
+                            "scene_index": str(scene.scene_index),
+                            "provider": pixabay_asset["provider"],
+                            "source_url": pixabay_asset["source_url"],
+                            "attribution": pixabay_asset["attribution"],
+                            "license": pixabay_asset["license"],
+                        }
+                    )
+                    continue
+
+            # 4. Check Wikimedia Commons (Free / Public Domain)
             if enable_wikimedia and scene.visual_type == "media_composite":
                 wiki_asset = await self.fetch_wikimedia_image(
                     scene.visual_query,

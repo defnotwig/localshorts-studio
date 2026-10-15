@@ -12,7 +12,7 @@ from sqlmodel import select
 
 from localshorts.database import get_app_settings, get_session
 from localshorts.models.db_models import ScriptRecord, ShortJob, TrendItem, WatchedTopic
-from localshorts.models.schemas import ScriptGenerationSchema
+from localshorts.models.schemas import ScenePlanItemSchema, ScriptGenerationSchema
 from localshorts.services.trends import discover_and_rank_trends
 from localshorts.worker.queue import worker_queue
 
@@ -293,3 +293,130 @@ async def pause_queue() -> dict[str, Any]:
 async def resume_queue() -> dict[str, Any]:
     worker_queue.resume()
     return {"paused": False}
+
+
+class ImportAssetsRequest(BaseModel):
+    content: str = Field(..., min_length=5)
+
+
+class AISearchAssetsRequest(BaseModel):
+    generate_dalle: bool = False
+
+
+@router.get("/jobs/{job_id}/chatgpt-prompt")
+async def get_job_chatgpt_prompt(job_id: str) -> dict[str, Any]:
+    """Generate ready-to-copy asset search prompt for ChatGPT Plus (Web Search + DALL-E)."""
+    with get_session() as session:
+        job = session.get(ShortJob, job_id)
+        if not job or not job.output_dir:
+            raise HTTPException(status_code=404, detail="Job or output directory not found")
+
+        scene_plan_file = Path(job.output_dir) / "scene_plan.json"
+        script_file = Path(job.output_dir) / "script.json"
+        if not scene_plan_file.exists():
+            raise HTTPException(status_code=400, detail="Scene plan not yet generated for this job")
+
+        raw_scenes = json.loads(scene_plan_file.read_text(encoding="utf-8"))
+        scenes = [ScenePlanItemSchema.model_validate(s) for s in raw_scenes]
+        script_text = ""
+        if script_file.exists():
+            try:
+                s_obj = ScriptGenerationSchema.model_validate_json(script_file.read_text(encoding="utf-8"))
+                script_text = s_obj.script
+            except Exception:
+                pass
+
+        from localshorts.services.media import MediaService
+        media_svc = MediaService()
+        prompt = media_svc.generate_chatgpt_asset_search_prompt(
+            topic=job.topic,
+            headline=job.headline,
+            script_text=script_text or job.topic,
+            scenes=scenes,
+        )
+        return {"job_id": job_id, "topic": job.topic, "prompt": prompt}
+
+
+@router.post("/jobs/{job_id}/import-chatgpt-assets")
+async def import_chatgpt_assets_endpoint(job_id: str, payload: ImportAssetsRequest) -> dict[str, Any]:
+    """Import URLs / output from ChatGPT Plus, download assets, and re-composite scenes."""
+    with get_session() as session:
+        job = session.get(ShortJob, job_id)
+        if not job or not job.output_dir:
+            raise HTTPException(status_code=404, detail="Job or output directory not found")
+
+        scene_plan_file = Path(job.output_dir) / "scene_plan.json"
+        if not scene_plan_file.exists():
+            raise HTTPException(status_code=400, detail="Scene plan not yet generated for this job")
+
+        raw_scenes = json.loads(scene_plan_file.read_text(encoding="utf-8"))
+        scenes = [ScenePlanItemSchema.model_validate(s) for s in raw_scenes]
+
+        from localshorts.services.media import MediaService
+        media_svc = MediaService()
+        target_dir = Path(job.output_dir) / "scenes"
+        updated_scenes, attributions = await media_svc.import_chatgpt_assets_text(
+            text=payload.content,
+            scenes=scenes,
+            target_dir=target_dir,
+        )
+        scene_plan_file.write_text(
+            json.dumps([s.model_dump() for s in updated_scenes], indent=2),
+            encoding="utf-8",
+        )
+
+    # Trigger re-render of scenes and video
+    updated = worker_queue.request_stage_regeneration(job_id=job_id, stage_name="scenes")
+    return {
+        "status": "imported",
+        "imported_count": len(attributions),
+        "attributions": attributions,
+        "job": serialize_job(updated or job),
+    }
+
+
+@router.post("/jobs/{job_id}/search-assets-ai")
+async def ai_search_assets_endpoint(job_id: str, payload: AISearchAssetsRequest) -> dict[str, Any]:
+    """Search and generate visual assets directly using OpenAI credentials."""
+    cfg = get_app_settings()
+    if not cfg.openai_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="OpenAI API key not configured in Settings. Add your key or use the ChatGPT Plus prompt copier."
+        )
+
+    with get_session() as session:
+        job = session.get(ShortJob, job_id)
+        if not job or not job.output_dir:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        scene_plan_file = Path(job.output_dir) / "scene_plan.json"
+        if not scene_plan_file.exists():
+            raise HTTPException(status_code=400, detail="Scene plan not yet generated for this job")
+
+        raw_scenes = json.loads(scene_plan_file.read_text(encoding="utf-8"))
+        scenes = [ScenePlanItemSchema.model_validate(s) for s in raw_scenes]
+
+        from localshorts.services.media import MediaService
+        media_svc = MediaService()
+        target_dir = Path(job.output_dir) / "scenes"
+        updated_scenes, attributions = await media_svc.search_and_generate_assets_openai(
+            topic=job.topic,
+            scenes=scenes,
+            target_dir=target_dir,
+            api_key=cfg.openai_api_key,
+            model=cfg.openai_model,
+            generate_dalle=payload.generate_dalle,
+        )
+        scene_plan_file.write_text(
+            json.dumps([s.model_dump() for s in updated_scenes], indent=2),
+            encoding="utf-8",
+        )
+
+    updated = worker_queue.request_stage_regeneration(job_id=job_id, stage_name="scenes")
+    return {
+        "status": "completed",
+        "generated_count": len(attributions),
+        "attributions": attributions,
+        "job": serialize_job(updated or job),
+    }

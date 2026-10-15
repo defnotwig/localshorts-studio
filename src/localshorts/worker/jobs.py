@@ -409,6 +409,8 @@ class JobPipelineExecutor:
                     scenes=scenes,
                     enable_wikimedia=(cfg.enable_wikimedia and not is_test),
                     authorized_media_dir=cfg.authorized_media_dir,
+                    pexels_api_key=getattr(cfg, "pexels_api_key", ""),
+                    pixabay_api_key=getattr(cfg, "pixabay_api_key", ""),
                     cache_limit_gb=cfg.cache_limit_gb,
                 )
 

@@ -141,18 +141,94 @@ async function saveSettings() {
       daily_candidate_limit: parseInt(document.getElementById("setting-daily-target")?.value || "10", 10),
       ollama_model: document.getElementById("setting-ollama-model")?.value || "qwen3:4b",
       ollama_num_ctx: parseInt(document.getElementById("setting-ollama-ctx")?.value || "4096", 10),
-      tts_provider: document.getElementById("setting-tts-engine")?.value || "kokoro",
-      tts_voice: document.getElementById("setting-tts-voice")?.value || "af_heart",
+      tts_provider: document.getElementById("setting-tts-engine")?.value || "edge-tts",
+      tts_voice: document.getElementById("setting-tts-voice")?.value || "en-US-ChristopherNeural",
       visual_preset: document.getElementById("setting-visual-preset")?.value || "Creator News",
       caption_preset: document.getElementById("setting-caption-preset")?.value || "Bold",
       channel_niche: document.getElementById("setting-niche")?.value || "Viral Creator & Internet Moments Explained",
       battery_override: Boolean(document.getElementById("setting-battery-override")?.checked),
       windows_startup_enabled: Boolean(document.getElementById("setting-auto-start")?.checked),
+      openai_api_key: document.getElementById("setting-openai-key")?.value || "",
+      openai_model: document.getElementById("setting-openai-model")?.value || "gpt-4o-mini",
+      pexels_api_key: document.getElementById("setting-pexels-key")?.value || "",
+      pixabay_api_key: document.getElementById("setting-pixabay-key")?.value || "",
     };
     await apiRequest("/api/settings", "POST", payload);
     showToast("Settings saved to SQLite WAL!");
   } catch (err) {
     showToast(`Failed to save settings: ${err.message}`, true);
+  }
+}
+
+let currentModalJobId = null;
+
+async function openChatGPTAssetModal(jobId) {
+  currentModalJobId = jobId;
+  const modal = document.getElementById("chatgpt-modal");
+  const topicEl = document.getElementById("chatgpt-modal-topic");
+  const promptEl = document.getElementById("chatgpt-prompt-text");
+  if (!modal) return;
+  modal.style.display = "flex";
+  if (topicEl) topicEl.textContent = `Job #${jobId} — Generating search prompt...`;
+  if (promptEl) promptEl.value = "Fetching prompt...";
+
+  try {
+    const res = await apiRequest(`/api/jobs/${jobId}/chatgpt-prompt`);
+    if (topicEl) topicEl.textContent = `Job #${jobId}: ${res.topic}`;
+    if (promptEl) promptEl.value = res.prompt;
+  } catch (err) {
+    if (promptEl) promptEl.value = `Note: Scene plan not generated yet or error: ${err.message}. Please generate or queue the short first.`;
+  }
+}
+
+function closeChatGPTModal() {
+  const modal = document.getElementById("chatgpt-modal");
+  if (modal) modal.style.display = "none";
+  currentModalJobId = null;
+}
+
+async function copyChatGPTAssetPrompt() {
+  const promptEl = document.getElementById("chatgpt-prompt-text");
+  if (!promptEl || !promptEl.value) return;
+  try {
+    await navigator.clipboard.writeText(promptEl.value);
+    showToast("📋 Copied ChatGPT Plus prompt to clipboard! Paste it into ChatGPT.");
+  } catch (_) {
+    promptEl.select();
+    document.execCommand("copy");
+    showToast("📋 Copied prompt!");
+  }
+}
+
+async function importChatGPTAssets() {
+  if (!currentModalJobId) return;
+  const textEl = document.getElementById("chatgpt-import-text");
+  const content = textEl?.value?.trim();
+  if (!content) {
+    showToast("Please paste media URLs or the ChatGPT Plus output first.", true);
+    return;
+  }
+  try {
+    showToast("Downloading & formatting assets into 1080x1920 vertical scenes...");
+    const res = await apiRequest(`/api/jobs/${currentModalJobId}/import-chatgpt-assets`, "POST", { content });
+    showToast(`✅ Successfully imported ${res.imported_count} visual asset(s)! Re-rendering short...`);
+    closeChatGPTModal();
+    setTimeout(() => { window.location.reload(); }, 900);
+  } catch (err) {
+    showToast(`Import error: ${err.message}`, true);
+  }
+}
+
+async function triggerAISearchDirect() {
+  if (!currentModalJobId) return;
+  try {
+    showToast("Querying OpenAI API to search/generate visual assets...");
+    const res = await apiRequest(`/api/jobs/${currentModalJobId}/search-assets-ai`, "POST", { generate_dalle: false });
+    showToast(`✅ Generated ${res.generated_count} visual asset(s)! Re-rendering...`);
+    closeChatGPTModal();
+    setTimeout(() => { window.location.reload(); }, 900);
+  } catch (err) {
+    showToast(`AI Search: ${err.message}`, true);
   }
 }
 

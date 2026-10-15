@@ -58,13 +58,14 @@
           </td>
           <td>
             <div class="flex gap-2" style="flex-wrap: wrap;">
-              <button class="btn btn-sm btn-secondary" title="Regenerate script & downstream" onclick="regenerateStage({{ j.id }}, 'SCRIPT')">Regen Script</button>
-              <button class="btn btn-sm btn-secondary" title="Regenerate TTS audio & render" onclick="regenerateStage({{ j.id }}, 'TTS')">Regen Voice</button>
-              <button class="btn btn-sm btn-secondary" title="Regenerate captions & burn-in" onclick="regenerateStage({{ j.id }}, 'CAPTIONS')">Regen Captions</button>
-              <button class="btn btn-sm btn-secondary" title="Regenerate procedural visuals & render" onclick="regenerateStage({{ j.id }}, 'SCENES')">Regen Visuals</button>
-              <button class="btn btn-sm btn-secondary" title="Re-encode MP4 & re-run QC" onclick="regenerateStage({{ j.id }}, 'RENDER')">Re-Render</button>
+              <button class="btn btn-sm btn-secondary" title="Regenerate script & downstream" onclick="regenerateStage('{{ j.id }}', 'SCRIPT')">Regen Script</button>
+              <button class="btn btn-sm btn-secondary" title="Regenerate TTS audio & render" onclick="regenerateStage('{{ j.id }}', 'TTS')">Regen Voice</button>
+              <button class="btn btn-sm btn-secondary" title="Regenerate captions & burn-in" onclick="regenerateStage('{{ j.id }}', 'CAPTIONS')">Regen Captions</button>
+              <button class="btn btn-sm btn-secondary" title="Regenerate procedural visuals & render" onclick="regenerateStage('{{ j.id }}', 'SCENES')">Regen Visuals</button>
+              <button class="btn btn-sm btn-secondary" title="Re-encode MP4 & re-run QC" onclick="regenerateStage('{{ j.id }}', 'RENDER')">Re-Render</button>
+              <button class="btn btn-sm btn-primary" style="background: #10b981; border-color: #10b981;" title="Use your ChatGPT Plus subscription to search & import assets" onclick="openChatGPTAssetModal('{{ j.id }}')">ChatGPT Assets</button>
               {% if j.state not in ['READY', 'CANCELLED', 'FAILED'] %}
-              <button class="btn btn-sm btn-danger" onclick="cancelJob({{ j.id }})">Cancel</button>
+              <button class="btn btn-sm btn-danger" onclick="cancelJob('{{ j.id }}')">Cancel</button>
               {% endif %}
             </div>
           </td>
@@ -76,6 +77,49 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+</div>
+
+<!-- ChatGPT Plus Asset Hub Modal -->
+<div id="chatgpt-modal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 9999; align-items: center; justify-content: center;">
+  <div class="card" style="max-width: 680px; width: 90%; max-height: 85vh; overflow-y: auto; background: var(--bg-card, #1e2230); border: 1px solid var(--border, #2e3446); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+    <div class="card-header flex justify-between items-center">
+      <div>
+        <div class="card-title flex items-center gap-2">
+          <span style="color: #10b981;">✨</span> ChatGPT Plus Asset Search Assistant
+        </div>
+        <div class="card-subtitle" id="chatgpt-modal-topic">Search &amp; import royalty-free scene assets</div>
+      </div>
+      <button class="btn btn-sm btn-secondary" onclick="closeChatGPTModal()">✕</button>
+    </div>
+
+    <div style="padding: 16px;">
+      <div class="mb-3">
+        <div class="font-bold text-sm mb-1">Step 1: Copy Search Prompt for ChatGPT Plus</div>
+        <div class="text-xs text-secondary mb-2">
+          Paste this prompt into ChatGPT Plus (with Web Search enabled). ChatGPT will find direct royalty-free URLs from Wikimedia, Pexels, Pixabay, Unsplash or generate DALL-E art.
+        </div>
+        <textarea id="chatgpt-prompt-text" class="form-textarea" rows="7" readonly style="font-family: monospace; font-size: 11px;"></textarea>
+        <div class="flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" onclick="copyChatGPTAssetPrompt()">📋 Copy Prompt to Clipboard</button>
+          <a href="https://chatgpt.com" target="_blank" class="btn btn-sm btn-secondary">🌐 Open ChatGPT.com</a>
+        </div>
+      </div>
+
+      <hr style="border: 0; border-top: 1px solid var(--border, #2e3446); margin: 16px 0;">
+
+      <div>
+        <div class="font-bold text-sm mb-1">Step 2: Paste ChatGPT URLs / Results</div>
+        <div class="text-xs text-secondary mb-2">
+          Paste the media URLs or the full response from ChatGPT Plus below. LocalShorts Studio will automatically download, format to 9:16 vertical (1080×1920) with blurred backdrop, and bind them to your video scenes!
+        </div>
+        <textarea id="chatgpt-import-text" class="form-textarea" rows="4" placeholder="Paste direct image URLs or ChatGPT output here (e.g. Scene 1: https://... Scene 2: https://...)"></textarea>
+        <div class="flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" style="background: #10b981; border-color: #10b981;" onclick="importChatGPTAssets()">⬇️ Download &amp; Attach Assets to Short</button>
+          <button class="btn btn-sm btn-secondary" onclick="triggerAISearchDirect()">🤖 Auto-Search with OpenAI API</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}

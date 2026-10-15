@@ -33,8 +33,8 @@ class AppSettings(SQLModel, table=True):
     ollama_model: str = Field(default="qwen3:4b")
     ollama_num_ctx: int = Field(default=4096)
     unload_model_after_gen: bool = Field(default=True)
-    tts_provider: str = Field(default="kokoro")  # kokoro, piper, sapi
-    tts_voice: str = Field(default="af_heart")
+    tts_provider: str = Field(default="edge-tts")  # edge-tts, kokoro, piper, sapi
+    tts_voice: str = Field(default="en-US-ChristopherNeural")
     tts_speed: float = Field(default=1.05)
     use_whisper_alignment: bool = Field(default=False)
     visual_preset: str = Field(default="Creator News")
@@ -63,6 +63,9 @@ class AppSettings(SQLModel, table=True):
     authorized_media_dir: str = Field(default="")
     youtube_api_key: str = Field(default="")
     pixabay_api_key: str = Field(default="")
+    pexels_api_key: str = Field(default="")
+    openai_api_key: str = Field(default="")
+    openai_model: str = Field(default="gpt-4o-mini")
     coverr_api_key: str = Field(default="")
     updated_at: str = Field(default_factory=utc_now_iso)
 

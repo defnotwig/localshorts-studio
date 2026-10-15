@@ -59,11 +59,14 @@ class WorkerQueue:
 
     def start(self) -> None:
         """Start the background worker loop and recover any interrupted jobs from SQLite."""
+        self._lock = asyncio.Lock()
+        self._queue_event = asyncio.Event()
         self.recover_interrupted_jobs()
         if self._worker_task is None or self._worker_task.done():
             self._running = True
             self._worker_task = asyncio.create_task(self._worker_loop())
             self._queue_event.set()
+            logger.info("WorkerQueue started background worker task")
 
     async def stop(self) -> None:
         self._running = False
@@ -288,58 +291,71 @@ class WorkerQueue:
                 self._active_job_id = None
 
     async def _worker_loop(self) -> None:
+        logger.info("Worker loop running")
         while self._running:
-            await self._queue_event.wait()
-            if not self._running:
+            try:
+                await self._queue_event.wait()
+                if not self._running:
+                    break
+
+                if self._paused:
+                    await asyncio.sleep(2.0)
+                    continue
+
+                with get_session() as session:
+                    stmt = (
+                        select(ShortJob)
+                        .where(ShortJob.state == JobState.DISCOVERED.value)
+                        .order_by(ShortJob.priority.desc(), ShortJob.created_at.asc())
+                    )
+                    pending_jobs = list(session.exec(stmt).all())
+
+                if not pending_jobs:
+                    self._queue_event.clear()
+                    continue
+
+                cfg = get_app_settings()
+                hw = detect_hardware()
+
+                # Check minimum disk space (default 10 GB)
+                if hw.free_disk_gb < cfg.min_free_disk_gb:
+                    logger.warning(
+                        "Low disk space (%.1f GB free < %.1f GB minimum); pausing queue",
+                        hw.free_disk_gb,
+                        cfg.min_free_disk_gb,
+                    )
+                    self._paused = True
+                    continue
+
+                # Check battery guard when multiple jobs are queued
+                if len(pending_jobs) > 1 and should_pause_for_battery(
+                    hw.on_battery, cfg.battery_override, is_batch=True
+                ):
+                    logger.info("Running on battery — batch generation paused by default.")
+                    await asyncio.sleep(5.0)
+                    continue
+
+                next_job = pending_jobs[0]
+                start_stage, stop_after_script = self._pending_stage_overrides.pop(
+                    next_job.id,
+                    (JobState.RESEARCHING, next_job.mode == "ASSISTED"),
+                )
+                logger.info(
+                    "Worker picking up job %s (start_stage=%s, stop_after_script=%s)",
+                    next_job.id,
+                    start_stage.value,
+                    stop_after_script,
+                )
+                await self.process_one_job_now(
+                    job_id=next_job.id,
+                    start_stage=start_stage,
+                    stop_after_script=stop_after_script,
+                )
+            except asyncio.CancelledError:
                 break
-
-            if self._paused:
+            except Exception as loop_exc:
+                logger.error("Unhandled error in worker loop: %s", loop_exc, exc_info=True)
                 await asyncio.sleep(2.0)
-                continue
-
-            with get_session() as session:
-                stmt = (
-                    select(ShortJob)
-                    .where(ShortJob.state == JobState.DISCOVERED.value)
-                    .order_by(ShortJob.priority.desc(), ShortJob.created_at.asc())
-                )
-                pending_jobs = list(session.exec(stmt).all())
-
-            if not pending_jobs:
-                self._queue_event.clear()
-                continue
-
-            cfg = get_app_settings()
-            hw = detect_hardware()
-
-            # Check minimum disk space (default 10 GB)
-            if hw.free_disk_gb < cfg.min_free_disk_gb:
-                logger.warning(
-                    "Low disk space (%.1f GB free < %.1f GB minimum); pausing queue",
-                    hw.free_disk_gb,
-                    cfg.min_free_disk_gb,
-                )
-                self._paused = True
-                continue
-
-            # Check battery guard when multiple jobs are queued
-            if len(pending_jobs) > 1 and should_pause_for_battery(
-                hw.on_battery, cfg.battery_override, is_batch=True
-            ):
-                logger.info("Running on battery — batch generation paused by default.")
-                await asyncio.sleep(5.0)
-                continue
-
-            next_job = pending_jobs[0]
-            start_stage, stop_after_script = self._pending_stage_overrides.pop(
-                next_job.id,
-                (JobState.RESEARCHING, next_job.mode == "ASSISTED"),
-            )
-            await self.process_one_job_now(
-                job_id=next_job.id,
-                start_stage=start_stage,
-                stop_after_script=stop_after_script,
-            )
 
 
 worker_queue = WorkerQueue()

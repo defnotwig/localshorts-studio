@@ -129,6 +129,7 @@ def _run_forward_migrations(session: Session) -> None:
     migrations = [
         (1, "Initial LocalShorts Studio v0.1.0 schema (WAL, 9 core tables)"),
         (2, "Ensure outlier_multiplier and source_confidence columns exist on trend_items & short_jobs"),
+        (3, "Add openai_api_key, openai_model, pexels_api_key to app_settings"),
     ]
     for version, description in migrations:
         existing = session.get(SchemaMigration, version)
@@ -139,6 +140,16 @@ def _run_forward_migrations(session: Session) -> None:
                     "ALTER TABLE trend_items ADD COLUMN outlier_multiplier REAL DEFAULT 1.0",
                     "ALTER TABLE trend_items ADD COLUMN source_confidence INTEGER DEFAULT 70",
                     "ALTER TABLE short_jobs ADD COLUMN source_confidence INTEGER DEFAULT 80",
+                ):
+                    try:
+                        session.exec(text(stmt))
+                    except Exception:
+                        pass
+            elif version == 3:
+                for stmt in (
+                    "ALTER TABLE app_settings ADD COLUMN openai_api_key TEXT DEFAULT ''",
+                    "ALTER TABLE app_settings ADD COLUMN openai_model TEXT DEFAULT 'gpt-4o-mini'",
+                    "ALTER TABLE app_settings ADD COLUMN pexels_api_key TEXT DEFAULT ''",
                 ):
                     try:
                         session.exec(text(stmt))

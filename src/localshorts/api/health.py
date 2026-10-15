@@ -96,3 +96,4 @@ async def get_status_bar() -> dict[str, Any]:
         "free_disk_gb": health.free_disk_gb,
         "profile": health.profile,
     }
+

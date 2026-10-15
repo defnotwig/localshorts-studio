@@ -42,16 +42,36 @@
 
     <div class="grid-2">
       <div class="form-group">
-        <label class="form-label">TTS Engine (CPU Only)</label>
+        <label class="form-label">TTS Engine</label>
         <select id="setting-tts-engine" class="form-select">
-          <option value="kokoro" {% if settings.tts_engine == 'kokoro' %}selected{% endif %}>Kokoro-82M ONNX (Primary)</option>
-          <option value="piper" {% if settings.tts_engine == 'piper' %}selected{% endif %}>Piper Local ONNX</option>
-          <option value="sapi" {% if settings.tts_engine == 'sapi' %}selected{% endif %}>Windows SAPI5 Native</option>
+          <option value="edge-tts" {% if settings.tts_engine == 'edge-tts' or settings.tts_provider == 'edge-tts' %}selected{% endif %}>Free Online Neural (Edge TTS — Studio Quality, Zero Cost)</option>
+          <option value="kokoro" {% if settings.tts_engine == 'kokoro' or settings.tts_provider == 'kokoro' %}selected{% endif %}>Kokoro-82M ONNX (Local CPU)</option>
+          <option value="sapi" {% if settings.tts_engine == 'sapi' or settings.tts_provider == 'sapi' %}selected{% endif %}>Windows SAPI5 Native (Offline Fallback)</option>
         </select>
       </div>
       <div class="form-group">
-        <label class="form-label">Default Voice ID</label>
-        <input id="setting-tts-voice" type="text" class="form-input" value="{{ settings.tts_voice }}">
+        <label class="form-label">Default Voice</label>
+        <select id="setting-tts-voice" class="form-select">
+          <optgroup label="Free Online Neural Voices (Edge TTS)">
+            <option value="en-US-ChristopherNeural" {% if settings.tts_voice == 'en-US-ChristopherNeural' %}selected{% endif %}>Christopher (Authoritative Tech/Explainer Male - Free Online)</option>
+            <option value="en-US-GuyNeural" {% if settings.tts_voice == 'en-US-GuyNeural' %}selected{% endif %}>Guy (Casual Creator/Viral Male - Free Online)</option>
+            <option value="en-US-JennyNeural" {% if settings.tts_voice == 'en-US-JennyNeural' %}selected{% endif %}>Jenny (Conversational & Friendly Female - Free Online)</option>
+            <option value="en-US-AriaNeural" {% if settings.tts_voice == 'en-US-AriaNeural' %}selected{% endif %}>Aria (Dynamic & Expressive Female - Free Online)</option>
+            <option value="en-US-EricNeural" {% if settings.tts_voice == 'en-US-EricNeural' %}selected{% endif %}>Eric (Young & Upbeat Male - Free Online)</option>
+            <option value="en-GB-RyanNeural" {% if settings.tts_voice == 'en-GB-RyanNeural' %}selected{% endif %}>Ryan (Documentary UK Male - Free Online)</option>
+            <option value="en-GB-SoniaNeural" {% if settings.tts_voice == 'en-GB-SoniaNeural' %}selected{% endif %}>Sonia (Polished UK Female - Free Online)</option>
+            <option value="en-AU-WilliamNeural" {% if settings.tts_voice == 'en-AU-WilliamNeural' %}selected{% endif %}>William (Engaging AU Male - Free Online)</option>
+          </optgroup>
+          <optgroup label="Local Offline Voices">
+            <option value="af_heart" {% if settings.tts_voice == 'af_heart' %}selected{% endif %}>Heart (Neutral US Female - Kokoro)</option>
+            <option value="am_adam" {% if settings.tts_voice == 'am_adam' %}selected{% endif %}>Adam (Neutral US Male - Kokoro)</option>
+            <option value="af_bella" {% if settings.tts_voice == 'af_bella' %}selected{% endif %}>Bella (Energetic US Female - Kokoro)</option>
+            <option value="am_michael" {% if settings.tts_voice == 'am_michael' %}selected{% endif %}>Michael (Documentary US Male - Kokoro)</option>
+            <option value="bf_emma" {% if settings.tts_voice == 'bf_emma' %}selected{% endif %}>Emma (Clear UK Female - Kokoro)</option>
+            <option value="bm_george" {% if settings.tts_voice == 'bm_george' %}selected{% endif %}>George (Narrator UK Male - Kokoro)</option>
+            <option value="sapi_default" {% if settings.tts_voice == 'sapi_default' %}selected{% endif %}>Windows SAPI Narrator (Offline Fallback)</option>
+          </optgroup>
+        </select>
       </div>
     </div>
 
@@ -103,19 +123,40 @@
   <div class="card">
     <div class="card-header">
       <div>
-        <div class="card-title">Optional Free Stock Media Keys (Never Required)</div>
-        <div class="card-subtitle">Procedural &amp; Wikimedia Commons visuals work with zero keys</div>
+        <div class="card-title">ChatGPT Plus &amp; Free Stock Media Hub</div>
+        <div class="card-subtitle">Leverage your ChatGPT Plus subscription &amp; free stock APIs for visual assets</div>
+      </div>
+    </div>
+
+    <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+      <div class="font-bold text-sm mb-1" style="color: #10b981;">✨ How to Use Your ChatGPT Plus Subscription</div>
+      <div class="text-xs text-secondary" style="line-height: 1.5;">
+        You can use your active ChatGPT Plus subscription with Web Search &amp; DALL-E 3 directly! In the <strong>Queue</strong>, click <strong>ChatGPT Assets</strong> on any job to copy an engineered search prompt, paste it into ChatGPT Plus, and paste back the URLs to automatically download, vertical-crop, and bind them to your scenes.
       </div>
     </div>
 
     <div class="form-group">
-      <label class="form-label">Pexels API Key (Optional Free Key)</label>
-      <input id="setting-pexels-key" type="password" class="form-input" placeholder="{% if settings.pexels_api_key_set %}******** (Configured){% else %}Not configured — optional{% endif %}">
+      <label class="form-label">OpenAI API Key (Optional — for automated background search &amp; DALL-E)</label>
+      <input id="setting-openai-key" type="password" class="form-input" placeholder="{% if settings.has_openai_api_key %}******** (Configured){% else %}sk-... (Optional API key){% endif %}">
+      <div class="text-xs text-muted mt-1">If provided, LocalShorts Studio can automatically call GPT-4o / DALL-E 3 directly.</div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">OpenAI Model</label>
+      <select id="setting-openai-model" class="form-select">
+        <option value="gpt-4o-mini" {% if settings.openai_model == 'gpt-4o-mini' %}selected{% endif %}>gpt-4o-mini (Fast &amp; cost-efficient)</option>
+        <option value="gpt-4o" {% if settings.openai_model == 'gpt-4o' %}selected{% endif %}>gpt-4o (High-intelligence creative search)</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Pexels API Key (Optional Free Key — portrait stock photos &amp; videos)</label>
+      <input id="setting-pexels-key" type="password" class="form-input" placeholder="{% if settings.has_pexels_api_key %}******** (Configured){% else %}Free Pexels API key (optional){% endif %}">
     </div>
 
     <div class="form-group">
       <label class="form-label">Pixabay API Key (Optional Free Key)</label>
-      <input id="setting-pixabay-key" type="password" class="form-input" placeholder="{% if settings.pixabay_api_key_set %}******** (Configured){% else %}Not configured — optional{% endif %}">
+      <input id="setting-pixabay-key" type="password" class="form-input" placeholder="{% if settings.has_pixabay_api_key %}******** (Configured){% else %}Free Pixabay API key (optional){% endif %}">
     </div>
 
     <hr style="border: 0; border-top: 1px solid var(--border); margin: 18px 0;">

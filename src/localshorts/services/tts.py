@@ -27,13 +27,23 @@ KOKORO_MODEL_PATH = RUNTIME_DIR / "models" / "kokoro" / "kokoro-v1.0.onnx"
 KOKORO_VOICES_PATH = RUNTIME_DIR / "models" / "kokoro" / "voices-v1.0.bin"
 
 AVAILABLE_VOICES: list[dict[str, str]] = [
-    {"id": "af_heart", "name": "Heart (Neutral US Female)", "provider": "kokoro", "lang": "en-us"},
-    {"id": "am_adam", "name": "Adam (Neutral US Male)", "provider": "kokoro", "lang": "en-us"},
-    {"id": "af_bella", "name": "Bella (Energetic US Female)", "provider": "kokoro", "lang": "en-us"},
-    {"id": "am_michael", "name": "Michael (Documentary US Male)", "provider": "kokoro", "lang": "en-us"},
-    {"id": "bf_emma", "name": "Emma (Clear UK Female)", "provider": "kokoro", "lang": "en-gb"},
-    {"id": "bm_george", "name": "George (Narrator UK Male)", "provider": "kokoro", "lang": "en-gb"},
-    {"id": "sapi_default", "name": "Windows SAPI Narrator (Offline)", "provider": "sapi", "lang": "en-us"},
+    # Free Online Neural Voices (Edge TTS - Studio Quality & Zero Subscription)
+    {"id": "en-US-ChristopherNeural", "name": "Christopher (Authoritative Tech/Explainer Male - Free Online)", "provider": "edge-tts", "lang": "en-us"},
+    {"id": "en-US-GuyNeural", "name": "Guy (Casual Creator/Viral Male - Free Online)", "provider": "edge-tts", "lang": "en-us"},
+    {"id": "en-US-JennyNeural", "name": "Jenny (Conversational & Friendly Female - Free Online)", "provider": "edge-tts", "lang": "en-us"},
+    {"id": "en-US-AriaNeural", "name": "Aria (Dynamic & Expressive Female - Free Online)", "provider": "edge-tts", "lang": "en-us"},
+    {"id": "en-US-EricNeural", "name": "Eric (Young & Upbeat Male - Free Online)", "provider": "edge-tts", "lang": "en-us"},
+    {"id": "en-GB-RyanNeural", "name": "Ryan (Documentary UK Male - Free Online)", "provider": "edge-tts", "lang": "en-gb"},
+    {"id": "en-GB-SoniaNeural", "name": "Sonia (Polished UK Female - Free Online)", "provider": "edge-tts", "lang": "en-gb"},
+    {"id": "en-AU-WilliamNeural", "name": "William (Engaging AU Male - Free Online)", "provider": "edge-tts", "lang": "en-au"},
+    # Local Offline Kokoro & SAPI
+    {"id": "af_heart", "name": "Heart (Neutral US Female - Kokoro Offline)", "provider": "kokoro", "lang": "en-us"},
+    {"id": "am_adam", "name": "Adam (Neutral US Male - Kokoro Offline)", "provider": "kokoro", "lang": "en-us"},
+    {"id": "af_bella", "name": "Bella (Energetic US Female - Kokoro Offline)", "provider": "kokoro", "lang": "en-us"},
+    {"id": "am_michael", "name": "Michael (Documentary US Male - Kokoro Offline)", "provider": "kokoro", "lang": "en-us"},
+    {"id": "bf_emma", "name": "Emma (Clear UK Female - Kokoro Offline)", "provider": "kokoro", "lang": "en-gb"},
+    {"id": "bm_george", "name": "George (Narrator UK Male - Kokoro Offline)", "provider": "kokoro", "lang": "en-gb"},
+    {"id": "sapi_default", "name": "Windows SAPI Narrator (Offline Fallback)", "provider": "sapi", "lang": "en-us"},
 ]
 
 
@@ -208,16 +218,63 @@ class TTSService:
         env = np.minimum(1.0, t / 0.04) * np.minimum(1.0, (dur - t) / 0.06)
         return (signal * syllable_mod * env * 0.45).astype(np.float32)
 
+    def _synthesize_clause_edge_tts(self, text: str, voice: str, speed: float) -> np.ndarray | None:
+        """
+        Synthesize speech using Microsoft Edge's free neural online TTS service.
+        Zero subscription, zero API key required, studio quality.
+        """
+        tmp_mp3 = Path(tempfile.mktemp(suffix=".mp3"))
+        tmp_wav = Path(tempfile.mktemp(suffix=".wav"))
+        try:
+            import asyncio
+
+            import edge_tts
+
+            rate_pct = int(round((speed - 1.0) * 100))
+            rate_str = f"{'+' if rate_pct >= 0 else ''}{rate_pct}%"
+
+            async def _run_communicate() -> bool:
+                comm = edge_tts.Communicate(text, voice, rate=rate_str)
+                await comm.save(str(tmp_mp3))
+                return tmp_mp3.exists() and tmp_mp3.stat().st_size > 100
+
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                ok = loop.run_until_complete(_run_communicate())
+                loop.close()
+            except Exception as e:
+                logger.warning("Edge-TTS connection warning for '%s': %s", text[:25], e)
+                return None
+
+            if not ok or not tmp_mp3.exists() or tmp_mp3.stat().st_size == 0:
+                return None
+
+            ffmpeg_bin = resolve_binary("ffmpeg") or "ffmpeg"
+            proc = run_subprocess_safe(
+                [ffmpeg_bin, "-y", "-i", str(tmp_mp3), "-ar", str(SAMPLE_RATE), "-ac", "1", str(tmp_wav)],
+                timeout=15.0,
+            )
+            if proc.returncode == 0 and tmp_wav.exists() and tmp_wav.stat().st_size > 100:
+                samples, sr = read_wav_float32(tmp_wav)
+                return resample_linear(samples, sr, SAMPLE_RATE)
+        except Exception as exc:
+            logger.warning("Edge-TTS processing error: %s", exc)
+        finally:
+            tmp_mp3.unlink(missing_ok=True)
+            tmp_wav.unlink(missing_ok=True)
+        return None
+
     def synthesize_script(
         self,
         script_text: str,
         output_wav_path: Path,
-        voice: str = "af_heart",
+        voice: str = "en-US-ChristopherNeural",
         speed: float = 1.05,
-        preferred_provider: str = "kokoro",
+        preferred_provider: str = "edge-tts",
     ) -> TTSSynthesisResult:
         """
-        Synthesize full script clause-by-clause on CPU, producing narration.wav and
+        Synthesize full script clause-by-clause, producing narration.wav and
         exact per-clause acoustic timestamps.
         """
         clauses_text = split_script_into_clauses(script_text)
@@ -226,11 +283,23 @@ class TTSService:
         all_chunks: list[np.ndarray] = []
         clause_timings: list[ClauseTiming] = []
         cursor_s = 0.0
-        provider_used = "kokoro-onnx"
+        provider_used = "edge-tts"
 
         for idx, clause in enumerate(clauses_text):
             audio: np.ndarray | None = None
-            if preferred_provider != "sapi" and voice != "sapi_default":
+            is_edge = voice.startswith("en-") or preferred_provider == "edge-tts" or any(
+                v["id"] == voice and v.get("provider") == "edge-tts" for v in AVAILABLE_VOICES
+            )
+
+            # 1. Try Free Online Edge-TTS first if voice or preferred_provider is edge-tts
+            if is_edge and voice != "sapi_default":
+                chosen_edge_voice = voice if voice.startswith("en-") else "en-US-ChristopherNeural"
+                audio = self._synthesize_clause_edge_tts(clause, voice=chosen_edge_voice, speed=speed)
+                if audio is not None:
+                    provider_used = "edge-tts"
+
+            # 2. Try Kokoro ONNX on CPU
+            if audio is None and preferred_provider != "sapi" and voice != "sapi_default":
                 audio = self._synthesize_clause_kokoro(clause, voice=voice, speed=speed)
                 if audio is not None:
                     provider_used = "kokoro-onnx"
@@ -239,6 +308,7 @@ class TTSService:
                     if audio is not None:
                         provider_used = "piper-onnx"
 
+            # 3. Fall back to Windows SAPI
             if audio is None:
                 audio = self._synthesize_clause_sapi(clause, speed=speed)
                 if audio is not None:

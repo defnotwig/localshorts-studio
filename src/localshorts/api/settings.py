@@ -50,6 +50,9 @@ class UpdateSettingsRequest(BaseModel):
     authorized_media_dir: str | None = None
     youtube_api_key: str | None = None
     pixabay_api_key: str | None = None
+    pexels_api_key: str | None = None
+    openai_api_key: str | None = None
+    openai_model: str | None = None
     coverr_api_key: str | None = None
 
 
@@ -69,9 +72,13 @@ def _sanitize_settings_response(cfg: AppSettings) -> dict[str, Any]:
     # Mask optional API keys in GET responses while indicating whether they are configured
     data["has_youtube_api_key"] = bool(cfg.youtube_api_key)
     data["has_pixabay_api_key"] = bool(cfg.pixabay_api_key)
+    data["has_pexels_api_key"] = bool(getattr(cfg, "pexels_api_key", ""))
+    data["has_openai_api_key"] = bool(getattr(cfg, "openai_api_key", ""))
     data["has_coverr_api_key"] = bool(cfg.coverr_api_key)
     data["youtube_api_key"] = ""
     data["pixabay_api_key"] = ""
+    data["pexels_api_key"] = ""
+    data["openai_api_key"] = ""
     data["coverr_api_key"] = ""
     return data
 
@@ -94,7 +101,7 @@ async def update_settings_endpoint(payload: UpdateSettingsRequest) -> dict[str, 
             cfg = AppSettings(id=1)
 
         for key, val in updates.items():
-            if key in ("youtube_api_key", "pixabay_api_key", "coverr_api_key") and val == "":
+            if key in ("youtube_api_key", "pixabay_api_key", "pexels_api_key", "openai_api_key", "coverr_api_key") and val == "":
                 continue
             if hasattr(cfg, key):
                 setattr(cfg, key, val)
