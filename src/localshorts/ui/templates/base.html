@@ -5,118 +5,140 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ page_title or "LocalShorts Studio" }} — Free Local AI Shorts Factory</title>
   <link rel="stylesheet" href="/static/css/studio.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div class="app-shell">
+  <!-- Top Global Telemetry & Control Bar -->
+  <header class="topbar">
+    <div class="brand-group">
+      <div class="brand-logo">LS</div>
+      <div>
+        <div class="brand-name">LocalShorts Studio</div>
+        <div class="brand-tag">Free Local AI Shorts Factory · Zero Subscription</div>
+      </div>
+    </div>
+
+    <!-- Center Page Title / Breadcrumb -->
+    <div class="topbar-nav-title">
+      <span class="topbar-pill">{{ page_title }}</span>
+    </div>
+
+    <!-- Right Telemetry Strip -->
+    <div class="status-strip">
+      <div class="status-pill" title="Hardware Video Encoder">
+        <span class="dot {% if hw.nvenc_available %}dot-green{% else %}dot-amber{% endif %}"></span>
+        <span class="pill-label">Encoder</span>
+        <strong>{% if hw.nvenc_available %}NVENC (RTX){% else %}CPU (libx264){% endif %}</strong>
+      </div>
+      <div class="status-pill" title="Local LLM Model Engine">
+        <span class="dot {% if hw.ollama_service_running %}dot-green{% else %}dot-amber{% endif %}"></span>
+        <span class="pill-label">LLM</span>
+        <strong>{{ settings.ollama_model }}</strong>
+      </div>
+      <div class="status-pill" title="Background Generation Worker Queue">
+        <span class="dot dot-blue"></span>
+        <span class="pill-label">Worker</span>
+        <strong id="telemetry-stage">IDLE</strong>
+      </div>
+      <button class="btn btn-sm btn-smoke" onclick="triggerSmokeTest()" title="Render a fast 4s diagnostic Short to verify local NVENC/CPU encoding">⚡ 1-Click Smoke Test</button>
+    </div>
+  </header>
+
+  <!-- Battery Safety Banner -->
+  <div id="battery-banner" class="banner banner-amber {% if hw.on_ac_power or settings.allow_battery_batch %}hidden{% endif %}">
+    <div class="flex items-center gap-2">
+      <span class="badge badge-warning">BATTERY DETECTED</span>
+      <span>Automated batch generation is paused to preserve laptop battery health. Plug in AC power or click override.</span>
+    </div>
+    <button class="btn btn-xs btn-secondary" onclick="toggleBatteryOverride(true)">Override on Battery</button>
+  </div>
+
+  <!-- Main Workspace Flex Container -->
+  <div class="workspace">
     <!-- Left Navigation Sidebar -->
     <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-title">
-          <div class="brand-badge">LS</div>
-          <div>
-            <div>LocalShorts Studio</div>
-            <div class="brand-subtitle">Free Local AI Shorts Factory</div>
-          </div>
-        </div>
-        <div class="mt-2 flex items-center justify-between text-xs text-muted">
-          <span>v{{ version }}</span>
-          <span class="badge badge-info">127.0.0.1 Local-First</span>
-        </div>
+      <div>
+        <div class="nav-section-label">STUDIO APPS</div>
+        <nav class="nav-list">
+          <a href="/dashboard" class="nav-link {% if active_tab == 'dashboard' %}active{% endif %}">
+            <span class="nav-icon">📊</span>
+            <span class="nav-text">Dashboard</span>
+            <span class="nav-num">01</span>
+          </a>
+          <a href="/research" class="nav-link {% if active_tab == 'research' %}active{% endif %}">
+            <span class="nav-icon">🔥</span>
+            <span class="nav-text">Trend Research</span>
+            <span class="nav-num">02</span>
+          </a>
+          <a href="/create" class="nav-link {% if active_tab == 'create' %}active{% endif %}">
+            <span class="nav-icon">✨</span>
+            <span class="nav-text">Create Short</span>
+            <span class="nav-num">03</span>
+          </a>
+          <a href="/queue" class="nav-link {% if active_tab == 'queue' %}active{% endif %}">
+            <span class="nav-icon">🎬</span>
+            <span class="nav-text">Queue &amp; Batch</span>
+            <span class="nav-num">04</span>
+          </a>
+          <a href="/library" class="nav-link {% if active_tab == 'library' %}active{% endif %}">
+            <span class="nav-icon">📂</span>
+            <span class="nav-text">Output Library</span>
+            <span class="nav-num">05</span>
+          </a>
+          <a href="/settings" class="nav-link {% if active_tab == 'settings' %}active{% endif %}">
+            <span class="nav-icon">⚙️</span>
+            <span class="nav-text">Settings</span>
+            <span class="nav-num">06</span>
+          </a>
+          <a href="/wizard" class="nav-link {% if active_tab == 'wizard' %}active{% endif %}">
+            <span class="nav-icon">🧙</span>
+            <span class="nav-text">Setup Wizard</span>
+            <span class="nav-num">07</span>
+          </a>
+          <a href="/diagnostics" class="nav-link {% if active_tab == 'diagnostics' %}active{% endif %}">
+            <span class="nav-icon">🩺</span>
+            <span class="nav-text">Diagnostics</span>
+            <span class="nav-num">08</span>
+          </a>
+        </nav>
       </div>
 
-      <nav class="nav-list">
-        <a href="/wizard" class="nav-link {% if active_tab == 'wizard' %}active{% endif %}">
-          <span>01</span>
-          <span>First-Run Wizard</span>
-        </a>
-        <a href="/dashboard" class="nav-link {% if active_tab == 'dashboard' %}active{% endif %}">
-          <span>02</span>
-          <span>Dashboard</span>
-        </a>
-        <a href="/research" class="nav-link {% if active_tab == 'research' %}active{% endif %}">
-          <span>03</span>
-          <span>Trend Research</span>
-        </a>
-        <a href="/create" class="nav-link {% if active_tab == 'create' %}active{% endif %}">
-          <span>04</span>
-          <span>Create Short</span>
-        </a>
-        <a href="/queue" class="nav-link {% if active_tab == 'queue' %}active{% endif %}">
-          <span>05</span>
-          <span>Queue &amp; Batch</span>
-        </a>
-        <a href="/library" class="nav-link {% if active_tab == 'library' %}active{% endif %}">
-          <span>06</span>
-          <span>Output Library</span>
-        </a>
-        <a href="/settings" class="nav-link {% if active_tab == 'settings' %}active{% endif %}">
-          <span>07</span>
-          <span>Settings</span>
-        </a>
-        <a href="/diagnostics" class="nav-link {% if active_tab == 'diagnostics' %}active{% endif %}">
-          <span>08</span>
-          <span>Diagnostics</span>
-        </a>
-      </nav>
-
       <div class="sidebar-footer">
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-muted">Profile</span>
-          <span id="telemetry-profile" class="badge badge-purple">{{ hw.recommended_profile }}</span>
-        </div>
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-muted">GPU / Thermal</span>
-          <span id="telemetry-temp" class="badge {% if hw.thermal_state == 'NORMAL' %}badge-success{% elif hw.thermal_state == 'THROTTLE' %}badge-warning{% else %}badge-danger{% endif %}">
-            {{ hw.gpu_temperature_c or '--' }}°C ({{ hw.thermal_state }})
-          </span>
-        </div>
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-muted">Power</span>
-          <span id="telemetry-power" class="badge {% if hw.on_ac_power %}badge-success{% else %}badge-warning{% endif %}">
-            {% if hw.on_ac_power %}AC Power{% else %}Battery ({{ hw.battery_percent or '--' }}%){% endif %}
-          </span>
-        </div>
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-muted">Daily Progress</span>
-          <span id="telemetry-daily" class="mono text-xs text-secondary">{{ daily_generated }}/{{ settings.daily_target_shorts }} Shorts</span>
+        <div class="telemetry-box">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-muted">Hardware Profile</span>
+            <span id="telemetry-profile" class="badge badge-purple">{{ hw.recommended_profile }}</span>
+          </div>
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-muted">GPU Temp</span>
+            <span id="telemetry-temp" class="badge {% if hw.thermal_state == 'NORMAL' %}badge-success{% elif hw.thermal_state == 'THROTTLE' %}badge-warning{% else %}badge-danger{% endif %}">
+              {{ hw.gpu_temperature_c or '--' }}°C ({{ hw.thermal_state }})
+            </span>
+          </div>
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs text-muted">Power</span>
+            <span id="telemetry-power" class="badge {% if hw.on_ac_power %}badge-success{% else %}badge-warning{% endif %}">
+              {% if hw.on_ac_power %}AC Adapter{% else %}Battery ({{ hw.battery_percent or '--' }}%){% endif %}
+            </span>
+          </div>
+          <div class="daily-progress-container">
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-muted">Daily Goal</span>
+              <span id="telemetry-daily" class="font-bold text-accent">{{ daily_generated }}/{{ settings.daily_target_shorts }} Shorts</span>
+            </div>
+            <div class="progress-bar-sm">
+              <div class="progress-fill-sm" style="width: {{ [((daily_generated / (settings.daily_target_shorts or 10)) * 100) | round(0), 100] | min }}%;"></div>
+            </div>
+          </div>
         </div>
       </div>
     </aside>
 
     <!-- Main Content Area -->
-    <main class="main-area">
-      <!-- Battery Banner Warning -->
-      <div id="battery-banner" class="banner banner-warning {% if hw.on_ac_power or settings.allow_battery_batch %}hidden{% endif %}">
-        <div>
-          <strong>Running on battery — batch generation paused by default.</strong>
-          <span class="text-xs ml-2">Plug in AC power or enable battery override to resume automated batch rendering.</span>
-        </div>
-        <button class="btn btn-sm btn-secondary" onclick="toggleBatteryOverride(true)">Override on Battery</button>
-      </div>
-
-      <!-- Top Header -->
-      <header class="topbar">
-        <div class="topbar-title">{{ page_title }}</div>
-        <div class="telemetry-strip">
-          <div class="telemetry-pill">
-            <span class="dot {% if hw.nvenc_available %}dot-green{% else %}dot-amber{% endif %}"></span>
-            <span>Encoder: <strong>{% if hw.nvenc_available %}NVENC (h264_nvenc){% else %}CPU (libx264){% endif %}</strong></span>
-          </div>
-          <div class="telemetry-pill">
-            <span class="dot {% if hw.ollama_service_running %}dot-green{% else %}dot-amber{% endif %}"></span>
-            <span>LLM: <strong>{{ settings.ollama_model }}</strong></span>
-          </div>
-          <div class="telemetry-pill">
-            <span class="dot dot-blue"></span>
-            <span>Worker: <strong id="telemetry-stage">IDLE</strong></span>
-          </div>
-          <button class="btn btn-sm btn-secondary" onclick="triggerSmokeTest()">1-Click Smoke Test</button>
-        </div>
-      </header>
-
-      <div class="page-content">
-        {% block content %}{% endblock %}
-      </div>
+    <main class="main-content">
+      {% block content %}{% endblock %}
     </main>
   </div>
 

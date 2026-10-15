@@ -308,16 +308,51 @@ async def get_job_chatgpt_prompt(job_id: str) -> dict[str, Any]:
     """Generate ready-to-copy asset search prompt for ChatGPT Plus (Web Search + DALL-E)."""
     with get_session() as session:
         job = session.get(ShortJob, job_id)
-        if not job or not job.output_dir:
-            raise HTTPException(status_code=404, detail="Job or output directory not found")
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
 
-        scene_plan_file = Path(job.output_dir) / "scene_plan.json"
-        script_file = Path(job.output_dir) / "script.json"
-        if not scene_plan_file.exists():
-            raise HTTPException(status_code=400, detail="Scene plan not yet generated for this job")
+        if not job.output_dir or not Path(job.output_dir).exists():
+            from localshorts.services.export import allocate_job_output_dir
+            job_dir = allocate_job_output_dir(topic=job.topic, job_id=job.id)
+            job.output_dir = str(job_dir)
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+        else:
+            job_dir = Path(job.output_dir)
 
-        raw_scenes = json.loads(scene_plan_file.read_text(encoding="utf-8"))
-        scenes = [ScenePlanItemSchema.model_validate(s) for s in raw_scenes]
+        job_dir.mkdir(parents=True, exist_ok=True)
+        scene_plan_file = job_dir / "scene_plan.json"
+        script_file = job_dir / "script.json"
+
+        scenes: list[ScenePlanItemSchema] = []
+        if scene_plan_file.exists():
+            try:
+                raw_scenes = json.loads(scene_plan_file.read_text(encoding="utf-8"))
+                scenes = [ScenePlanItemSchema.model_validate(s) for s in raw_scenes]
+            except Exception:
+                scenes = []
+
+        if not scenes:
+            from localshorts.services.scene_planner import plan_scenes_for_short
+            from localshorts.services.tts import ClauseTiming
+
+            target_dur = float(job.target_duration_s or 24)
+            dur_part = max(3.0, round(target_dur / 4.0, 1))
+            clauses = [
+                ClauseTiming(index=0, text=job.headline or job.topic, start=0.0, end=dur_part, duration=dur_part),
+                ClauseTiming(index=1, text="Key evidence and viral moment breakdown.", start=dur_part, end=dur_part * 2, duration=dur_part),
+                ClauseTiming(index=2, text="What creators and audiences are saying across platforms.", start=dur_part * 2, end=dur_part * 3, duration=dur_part),
+                ClauseTiming(index=3, text="The bottom line and what to watch next.", start=dur_part * 3, end=target_dur, duration=max(2.0, target_dur - dur_part * 3)),
+            ]
+            scenes = plan_scenes_for_short(
+                clauses=clauses,
+                visual_preset=job.visual_preset or "Creator News",
+                visual_search_terms=[job.topic[:30], "viral creator moment", "internet trend"],
+                topic=job.topic,
+            )
+            scene_plan_file.write_text(json.dumps([s.model_dump() for s in scenes], indent=2), encoding="utf-8")
+
         script_text = ""
         if script_file.exists():
             try:
@@ -331,10 +366,16 @@ async def get_job_chatgpt_prompt(job_id: str) -> dict[str, Any]:
         prompt = media_svc.generate_chatgpt_asset_search_prompt(
             topic=job.topic,
             headline=job.headline,
-            script_text=script_text or job.topic,
+            script_text=script_text or job.headline or job.topic,
             scenes=scenes,
         )
-        return {"job_id": job_id, "topic": job.topic, "prompt": prompt}
+        return {
+            "job_id": job_id,
+            "topic": job.topic,
+            "headline": job.headline or job.topic,
+            "prompt": prompt,
+            "scenes": [s.model_dump() for s in scenes],
+        }
 
 
 @router.post("/jobs/{job_id}/import-chatgpt-assets")
@@ -342,19 +383,51 @@ async def import_chatgpt_assets_endpoint(job_id: str, payload: ImportAssetsReque
     """Import URLs / output from ChatGPT Plus, download assets, and re-composite scenes."""
     with get_session() as session:
         job = session.get(ShortJob, job_id)
-        if not job or not job.output_dir:
-            raise HTTPException(status_code=404, detail="Job or output directory not found")
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
 
-        scene_plan_file = Path(job.output_dir) / "scene_plan.json"
-        if not scene_plan_file.exists():
-            raise HTTPException(status_code=400, detail="Scene plan not yet generated for this job")
+        if not job.output_dir or not Path(job.output_dir).exists():
+            from localshorts.services.export import allocate_job_output_dir
+            job_dir = allocate_job_output_dir(topic=job.topic, job_id=job.id)
+            job.output_dir = str(job_dir)
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+        else:
+            job_dir = Path(job.output_dir)
 
-        raw_scenes = json.loads(scene_plan_file.read_text(encoding="utf-8"))
-        scenes = [ScenePlanItemSchema.model_validate(s) for s in raw_scenes]
+        job_dir.mkdir(parents=True, exist_ok=True)
+        scene_plan_file = job_dir / "scene_plan.json"
+        scenes: list[ScenePlanItemSchema] = []
+        if scene_plan_file.exists():
+            try:
+                raw_scenes = json.loads(scene_plan_file.read_text(encoding="utf-8"))
+                scenes = [ScenePlanItemSchema.model_validate(s) for s in raw_scenes]
+            except Exception:
+                scenes = []
+
+        if not scenes:
+            from localshorts.services.scene_planner import plan_scenes_for_short
+            from localshorts.services.tts import ClauseTiming
+
+            target_dur = float(job.target_duration_s or 24)
+            dur_part = max(3.0, round(target_dur / 4.0, 1))
+            clauses = [
+                ClauseTiming(index=0, text=job.headline or job.topic, start=0.0, end=dur_part, duration=dur_part),
+                ClauseTiming(index=1, text="Key evidence and viral moment breakdown.", start=dur_part, end=dur_part * 2, duration=dur_part),
+                ClauseTiming(index=2, text="What creators and audiences are saying across platforms.", start=dur_part * 2, end=dur_part * 3, duration=dur_part),
+                ClauseTiming(index=3, text="The bottom line and what to watch next.", start=dur_part * 3, end=target_dur, duration=max(2.0, target_dur - dur_part * 3)),
+            ]
+            scenes = plan_scenes_for_short(
+                clauses=clauses,
+                visual_preset=job.visual_preset or "Creator News",
+                visual_search_terms=[job.topic[:30], "viral creator moment", "internet trend"],
+                topic=job.topic,
+            )
 
         from localshorts.services.media import MediaService
         media_svc = MediaService()
-        target_dir = Path(job.output_dir) / "scenes"
+        target_dir = job_dir / "scenes"
         updated_scenes, attributions = await media_svc.import_chatgpt_assets_text(
             text=payload.content,
             scenes=scenes,
@@ -373,6 +446,34 @@ async def import_chatgpt_assets_endpoint(job_id: str, payload: ImportAssetsReque
         "attributions": attributions,
         "job": serialize_job(updated or job),
     }
+
+
+@router.get("/media/stock-search")
+async def stock_search_endpoint(query: str, limit: int = 6) -> dict[str, Any]:
+    """Search free stock media across Pexels, Pixabay, and Wikimedia Commons."""
+    cfg = get_app_settings()
+    from localshorts.services.media import MediaService
+    media_svc = MediaService()
+    results = []
+
+    # 1. Pexels
+    if cfg.pexels_api_key:
+        p_res = await media_svc.fetch_pexels_image(query, api_key=cfg.pexels_api_key)
+        if p_res:
+            results.append(p_res)
+
+    # 2. Pixabay
+    if cfg.pixabay_api_key:
+        px_res = await media_svc.fetch_pixabay_image(query, api_key=cfg.pixabay_api_key)
+        if px_res:
+            results.append(px_res)
+
+    # 3. Wikimedia Commons (Public Domain)
+    w_res = await media_svc.fetch_wikimedia_image(query)
+    if w_res:
+        results.append(w_res)
+
+    return {"query": query, "results": results[:limit]}
 
 
 @router.post("/jobs/{job_id}/search-assets-ai")

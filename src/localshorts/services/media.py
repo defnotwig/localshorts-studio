@@ -341,9 +341,9 @@ class MediaService:
         Parse media URLs from ChatGPT Plus responses or direct lists, download them,
         format to vertical 1080x1920, and bind them to the respective scenes.
         """
-        url_pattern = re.compile(r"https?://[^\s<>'\"\)\]]+")
-        raw_urls = url_pattern.findall(text)
-        if not raw_urls:
+        # Look for Scene-prefixed URLs or plain URLs
+        scene_matches = re.findall(r"(?:Scene\s*(\d+)[:\s\-]+)?(https?://[^\s<>'\"\)\]]+)", text, re.IGNORECASE)
+        if not scene_matches:
             return scenes, []
 
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -354,32 +354,40 @@ class MediaService:
         }
 
         async with httpx.AsyncClient(timeout=15.0, headers=headers, follow_redirects=True) as client:
-            for idx, raw_url in enumerate(raw_urls):
-                if idx >= len(scenes):
-                    break
+            for fallback_idx, (scene_num_str, raw_url) in enumerate(scene_matches):
+                clean_url = raw_url.strip().rstrip(".,;:")
+                # Determine target scene index
+                target_idx = fallback_idx
+                if scene_num_str and scene_num_str.isdigit():
+                    parsed_num = int(scene_num_str)
+                    target_idx = parsed_num if parsed_num < len(scenes) else max(0, parsed_num - 1)
+
+                if target_idx >= len(scenes):
+                    target_idx = target_idx % len(scenes)
+
                 try:
-                    validate_external_url(raw_url)
-                    resp = await client.get(raw_url)
+                    validate_external_url(clean_url)
+                    resp = await client.get(clean_url)
                     if resp.status_code != 200 or len(resp.content) < 3_000:
                         continue
-                    out_file = target_dir / f"chatgpt_scene_{idx + 1}.jpg"
+                    out_file = target_dir / f"chatgpt_scene_{target_idx + 1}.jpg"
                     ok = format_image_for_vertical_short(resp.content, out_file)
                     if ok and out_file.exists():
-                        scenes[idx].media_asset_path = str(out_file)
-                        scenes[idx].visual_type = "media_composite"
-                        scenes[idx].media_attribution = f"ChatGPT Plus / Curated Asset (Scene {idx + 1})"
+                        scenes[target_idx].media_asset_path = str(out_file)
+                        scenes[target_idx].visual_type = "media_composite"
+                        scenes[target_idx].media_attribution = f"ChatGPT Plus / Curated Asset (Scene {target_idx + 1})"
                         imported_attributions.append(
                             {
-                                "scene_index": str(scenes[idx].scene_index),
+                                "scene_index": str(scenes[target_idx].scene_index),
                                 "provider": "chatgpt_plus",
-                                "source_url": raw_url,
+                                "source_url": clean_url,
                                 "path": str(out_file),
-                                "attribution": scenes[idx].media_attribution,
+                                "attribution": scenes[target_idx].media_attribution,
                                 "license": "Curated Royalty-Free",
                             }
                         )
                 except Exception as e:
-                    logger.warning("Failed to import asset for scene %d from %s: %s", idx + 1, raw_url, e)
+                    logger.warning("Failed to import asset for scene %d from %s: %s", target_idx + 1, clean_url, e)
 
         return scenes, imported_attributions
 

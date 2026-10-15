@@ -1,45 +1,162 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="card mb-4">
-  <div class="card-header">
-    <div>
-      <div class="card-title">Sequential Production Queue &amp; Per-Stage Regeneration</div>
-      <div class="card-subtitle">SQLite WAL crash-recoverable state machine — 1 job at a time to protect 4 GB VRAM &amp; laptop thermals</div>
-    </div>
-    <div class="flex gap-2">
-      <button class="btn btn-secondary" onclick="window.location.reload()">Refresh Queue</button>
-      <button class="btn btn-primary" onclick="generateDailyBatch(3)">Queue 3 Candidate Shorts</button>
+<div class="page-header-row">
+  <div class="page-title-group">
+    <h1>Production Queue &amp; Whop Clipping Studio</h1>
+    <p>Sequential crash-recoverable state machine · 1 job at a time to protect 4 GB VRAM &amp; laptop thermals</p>
+  </div>
+  <div class="flex gap-2">
+    <button class="btn btn-secondary" onclick="window.location.reload()">🔄 Refresh</button>
+    <button class="btn btn-primary" onclick="generateDailyBatch(3)">+ Queue 3 Shorts</button>
+    <button class="btn btn-emerald" onclick="generateDailyBatch({{ settings.daily_target_shorts or 10 }})">🚀 Full Daily Batch ({{ settings.daily_target_shorts or 10 }})</button>
+  </div>
+</div>
+
+<!-- View Switcher Bar -->
+<div class="view-switcher-bar">
+  <div class="flex items-center gap-3">
+    <span class="text-xs text-muted font-bold text-uppercase">Queue View:</span>
+    <div class="view-toggle-group">
+      <button id="view-grid-btn" class="view-btn active" onclick="toggleQueueView('grid')">
+        <span>🗂️</span> Whop 9:16 Cards
+      </button>
+      <button id="view-table-btn" class="view-btn" onclick="toggleQueueView('table')">
+        <span>📋</span> Production Table
+      </button>
     </div>
   </div>
+  <div class="flex items-center gap-2">
+    <span class="badge badge-purple">Total: {{ jobs | length }} Shorts</span>
+  </div>
+</div>
 
+<!-- 1. WHOP CLIPPING 9:16 CARD GRID VIEW (Default) -->
+<div id="queue-grid-view" class="whop-cards-grid">
+  {% for j in jobs %}
+  <div class="short-card" id="card-{{ j.id }}">
+    <!-- 9:16 Video / Poster Frame -->
+    <div class="short-card-preview" onclick="openShortPreview('{{ j.id }}', '{{ j.final_video_path }}', '{{ j.topic_title | escape }}')">
+      {% if j.state == 'READY' and j.final_video_path %}
+      <video preload="metadata" muted playsinline poster="/api/library/{{ j.id }}/thumbnail">
+        <source src="/api/library/{{ j.id }}/video" type="video/mp4">
+      </video>
+      <div class="short-card-play-btn">▶</div>
+      {% else %}
+      <div class="flex flex-col items-center justify-center p-4 text-center" style="height: 100%; width: 100%; background: linear-gradient(180deg, #0e1626 0%, #080c14 100%);">
+        <div style="font-size: 32px; margin-bottom: 8px;">🎬</div>
+        <div class="badge {% if j.state in ['FAILED', 'CANCELLED'] %}badge-danger{% elif j.state == 'DISCOVERED' %}badge-info{% else %}badge-warning{% endif %} mb-2">
+          {{ j.state }}
+        </div>
+        <div class="text-xs text-muted" style="padding: 0 10px;">{{ j.stage_message or 'Processing...' }}</div>
+      </div>
+      {% endif %}
+
+      <!-- Top Overlay: Badges & Hook -->
+      <div class="short-card-overlay">
+        <div class="flex justify-between items-center">
+          <span class="badge {% if j.state == 'READY' %}badge-success{% elif j.state in ['FAILED', 'CANCELLED'] %}badge-danger{% else %}badge-warning{% endif %}">
+            {{ j.state }}
+          </span>
+          <span class="badge badge-purple font-bold">
+            {% if j.quality_score %}QC {{ j.quality_score }}/100{% else %}QC Pending{% endif %}
+          </span>
+        </div>
+
+        {% if j.hook or j.script_text %}
+        <div class="hook-badge">
+          "{{ (j.hook or j.script_text)[:110] }}..."
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Card Body -->
+    <div class="short-card-body">
+      <div class="short-card-title" title="{{ j.topic_title }}">
+        {{ j.topic_title }}
+      </div>
+
+      <div class="short-card-meta">
+        <span>⏱️ {{ j.duration_sec | round(1) }}s</span>
+        <span>🎨 {{ j.visual_preset }}</span>
+        <span>🎙️ {{ j.voice_id or 'Voice' }}</span>
+      </div>
+
+      {% if j.state != 'READY' %}
+      <div class="progress-bar mb-3">
+        <div class="progress-fill" style="width: {{ j.progress_pct }}%;"></div>
+      </div>
+      {% endif %}
+
+      <!-- Action Toolbar -->
+      <div class="short-card-actions">
+        <button class="btn btn-sm btn-emerald flex-1" onclick="openChatGPTAssetModal('{{ j.id }}')" title="Use your ChatGPT Plus subscription to search & import visuals">
+          <span>✨</span> ChatGPT Assets
+        </button>
+
+        {% if j.state == 'READY' and j.final_video_path %}
+        <button class="btn btn-sm btn-secondary" onclick="openShortPreview('{{ j.id }}', '{{ j.final_video_path }}', '{{ j.topic_title | escape }}')" title="Watch 9:16 Short">
+          👁️ Watch
+        </button>
+        {% endif %}
+
+        <div style="position: relative;" class="dropdown-container">
+          <button class="btn btn-sm btn-secondary" onclick="toggleDropdown('dropdown-{{ j.id }}')">⚡ Regen ▾</button>
+          <div id="dropdown-{{ j.id }}" class="dropdown-menu" style="display: none; position: absolute; right: 0; bottom: 100%; margin-bottom: 6px; background: var(--stitch-surface); border: 1px solid var(--stitch-border-strong); border-radius: var(--radius-md); box-shadow: 0 10px 30px rgba(0,0,0,0.6); z-index: 100; min-width: 140px; padding: 4px;">
+            <button class="dropdown-item" onclick="regenerateStage('{{ j.id }}', 'SCRIPT')">📝 Script</button>
+            <button class="dropdown-item" onclick="regenerateStage('{{ j.id }}', 'TTS')">🎙️ Voice</button>
+            <button class="dropdown-item" onclick="regenerateStage('{{ j.id }}', 'CAPTIONS')">💬 Captions</button>
+            <button class="dropdown-item" onclick="regenerateStage('{{ j.id }}', 'SCENES')">🎨 Visuals</button>
+            <button class="dropdown-item" onclick="regenerateStage('{{ j.id }}', 'RENDER')">🎬 Re-Render</button>
+          </div>
+        </div>
+
+        {% if j.state not in ['READY', 'CANCELLED', 'FAILED'] %}
+        <button class="btn btn-xs btn-danger" onclick="cancelJob('{{ j.id }}')" title="Cancel job">✕</button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="card" style="grid-column: 1 / -1; padding: 40px; text-align: center;">
+    <div style="font-size: 38px; margin-bottom: 12px;">🎬</div>
+    <div class="card-title mb-2">No Shorts In Queue</div>
+    <p class="text-muted text-sm mb-4">Click <strong>+ Queue 3 Shorts</strong> or <strong>1-Click Smoke Test</strong> above to populate candidate stories.</p>
+    <button class="btn btn-primary" onclick="generateDailyBatch(3)">+ Queue 3 Candidate Shorts</button>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- 2. PRODUCTION TABLE VIEW (Hidden by default, toggled via switcher) -->
+<div id="queue-table-view" class="card mb-4" style="display: none;">
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>ID / Slug</th>
-          <th>Topic Title</th>
+          <th>Short / ID</th>
+          <th>Hook &amp; Story Title</th>
           <th>State &amp; Progress</th>
-          <th>Preset / Encoder</th>
-          <th>Scores</th>
-          <th>Per-Stage Regeneration &amp; Controls</th>
+          <th>Audio &amp; Preset</th>
+          <th>Quality QC</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for j in jobs %}
         <tr>
-          <td class="mono text-xs">
-            #{{ j.id }}<br>
-            <span class="text-muted">{{ j.slug }}</span>
+          <td class="mono text-xs" style="width: 130px;">
+            <span class="font-bold">#{{ j.id }}</span><br>
+            <span class="text-muted">{{ j.slug[:18] }}...</span>
           </td>
           <td>
-            <div class="font-bold">{{ j.topic_title }}</div>
-            {% if j.error_message %}
-            <div class="text-xs" style="color: var(--danger);">{{ j.error_message[:120] }}</div>
+            <div class="font-bold text-sm">{{ j.topic_title }}</div>
+            {% if j.hook %}
+            <div class="text-xs text-muted mt-1">"{{ j.hook[:90] }}..."</div>
             {% endif %}
           </td>
-          <td style="min-width: 170px;">
-            <div class="flex justify-between items-center mb-2">
-              <span class="badge {% if j.state == 'READY' %}badge-success{% elif j.state in ['FAILED', 'REJECTED_QUALITY', 'CANCELLED'] %}badge-danger{% elif j.state == 'QUEUED' %}badge-info{% else %}badge-warning{% endif %}">
+          <td style="min-width: 160px;">
+            <div class="flex justify-between items-center mb-1">
+              <span class="badge {% if j.state == 'READY' %}badge-success{% elif j.state in ['FAILED', 'CANCELLED'] %}badge-danger{% else %}badge-warning{% endif %}">
                 {{ j.state }}
               </span>
               <span class="mono text-xs">{{ j.progress_pct }}%</span>
@@ -49,30 +166,25 @@
             </div>
           </td>
           <td class="text-xs">
-            <div>{{ j.visual_preset }}</div>
-            <div class="mono text-muted">{{ j.encoder_used or 'pending' }} · {{ j.duration_sec | round(1) }}s</div>
+            <div>{{ j.voice_id or 'Christopher' }}</div>
+            <div class="text-muted">{{ j.visual_preset }} · {{ j.duration_sec | round(1) }}s</div>
           </td>
           <td class="mono text-xs">
-            QC: <strong>{{ j.quality_score }}/100</strong><br>
-            Orig Sim: {{ j.originality_similarity | round(2) }}
+            <span class="badge badge-purple">QC {{ j.quality_score }}/100</span><br>
+            <span class="text-muted">Sim: {{ j.originality_similarity | round(2) }}</span>
           </td>
           <td>
-            <div class="flex gap-2" style="flex-wrap: wrap;">
-              <button class="btn btn-sm btn-secondary" title="Regenerate script & downstream" onclick="regenerateStage('{{ j.id }}', 'SCRIPT')">Regen Script</button>
-              <button class="btn btn-sm btn-secondary" title="Regenerate TTS audio & render" onclick="regenerateStage('{{ j.id }}', 'TTS')">Regen Voice</button>
-              <button class="btn btn-sm btn-secondary" title="Regenerate captions & burn-in" onclick="regenerateStage('{{ j.id }}', 'CAPTIONS')">Regen Captions</button>
-              <button class="btn btn-sm btn-secondary" title="Regenerate procedural visuals & render" onclick="regenerateStage('{{ j.id }}', 'SCENES')">Regen Visuals</button>
-              <button class="btn btn-sm btn-secondary" title="Re-encode MP4 & re-run QC" onclick="regenerateStage('{{ j.id }}', 'RENDER')">Re-Render</button>
-              <button class="btn btn-sm btn-primary" style="background: #10b981; border-color: #10b981;" title="Use your ChatGPT Plus subscription to search & import assets" onclick="openChatGPTAssetModal('{{ j.id }}')">ChatGPT Assets</button>
+            <div class="flex gap-2">
+              <button class="btn btn-xs btn-emerald" onclick="openChatGPTAssetModal('{{ j.id }}')">✨ Assets</button>
+              {% if j.state == 'READY' and j.final_video_path %}
+              <button class="btn btn-xs btn-secondary" onclick="openShortPreview('{{ j.id }}', '{{ j.final_video_path }}', '{{ j.topic_title | escape }}')">👁️</button>
+              {% endif %}
+              <button class="btn btn-xs btn-secondary" onclick="regenerateStage('{{ j.id }}', 'RENDER')">Re-Render</button>
               {% if j.state not in ['READY', 'CANCELLED', 'FAILED'] %}
-              <button class="btn btn-sm btn-danger" onclick="cancelJob('{{ j.id }}')">Cancel</button>
+              <button class="btn btn-xs btn-danger" onclick="cancelJob('{{ j.id }}')">✕</button>
               {% endif %}
             </div>
           </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="6" class="text-muted">No jobs in queue. Use <strong>Create Short</strong> or <strong>1-Click Smoke Test</strong> to enqueue a video.</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -80,44 +192,136 @@
   </div>
 </div>
 
-<!-- ChatGPT Plus Asset Hub Modal -->
-<div id="chatgpt-modal" class="modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 9999; align-items: center; justify-content: center;">
-  <div class="card" style="max-width: 680px; width: 90%; max-height: 85vh; overflow-y: auto; background: var(--bg-card, #1e2230); border: 1px solid var(--border, #2e3446); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
-    <div class="card-header flex justify-between items-center">
+<!-- ==========================================================================
+     WHOP iPHONE-FRAME 9:16 VIDEO PLAYER MODAL
+     ========================================================================== -->
+<div id="phone-player-modal" class="phone-modal-backdrop" style="display: none;">
+  <div class="phone-mockup-wrapper">
+    <!-- Phone Bezel Frame -->
+    <div class="phone-frame">
+      <div class="phone-notch"></div>
+      <div class="phone-screen">
+        <video id="phone-modal-video" controls playsinline autoplay loop></video>
+      </div>
+    </div>
+
+    <!-- Companion Info Card -->
+    <div class="phone-companion-card">
+      <div class="flex justify-between items-center mb-3">
+        <span class="badge badge-success">READY FOR YOUTUBE SHORTS</span>
+        <button class="btn btn-sm btn-secondary" onclick="closeShortPreview()">✕ Close</button>
+      </div>
+
+      <h2 id="phone-modal-title" style="font-size: 18px; font-weight: 800; line-height: 1.35; margin-bottom: 12px; color: #fff;"></h2>
+
+      <div class="mb-4">
+        <div class="text-xs font-bold text-muted text-uppercase mb-1">Aspect Ratio &amp; Quality</div>
+        <div class="text-sm">1080×1920 (9:16 Vertical) · 30 FPS · H.264 + 48kHz AAC</div>
+      </div>
+
+      <div class="flex gap-2 mt-4" style="flex-wrap: wrap;">
+        <a id="phone-modal-download-btn" href="#" download class="btn btn-primary flex-1">⬇️ Download 1080×1920 MP4</a>
+        <button id="phone-modal-assets-btn" class="btn btn-emerald" onclick="">✨ Manage Assets</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================================================================
+     TABBED CHATGPT PLUS ASSET STUDIO MODAL
+     ========================================================================== -->
+<div id="chatgpt-modal" class="modal-overlay" style="display: none;">
+  <div class="asset-studio-dialog">
+    <!-- Header -->
+    <div class="asset-studio-header">
       <div>
-        <div class="card-title flex items-center gap-2">
-          <span style="color: #10b981;">✨</span> ChatGPT Plus Asset Search Assistant
+        <div class="flex items-center gap-2">
+          <span style="font-size: 18px;">✨</span>
+          <div class="card-title" id="chatgpt-modal-title">ChatGPT Plus &amp; Visual Media Studio</div>
         </div>
-        <div class="card-subtitle" id="chatgpt-modal-topic">Search &amp; import royalty-free scene assets</div>
+        <div class="card-subtitle" id="chatgpt-modal-topic">Job Asset Pipeline · Zero Subscription / ChatGPT Plus Powered</div>
       </div>
       <button class="btn btn-sm btn-secondary" onclick="closeChatGPTModal()">✕</button>
     </div>
 
-    <div style="padding: 16px;">
-      <div class="mb-3">
-        <div class="font-bold text-sm mb-1">Step 1: Copy Search Prompt for ChatGPT Plus</div>
-        <div class="text-xs text-secondary mb-2">
-          Paste this prompt into ChatGPT Plus (with Web Search enabled). ChatGPT will find direct royalty-free URLs from Wikimedia, Pexels, Pixabay, Unsplash or generate DALL-E art.
+    <!-- Tabs Header -->
+    <div class="asset-tabs-nav">
+      <button id="asset-tab-btn-prompt" class="asset-tab-btn active" onclick="switchAssetTab('prompt')">
+        <span>🤖</span> 1. ChatGPT Plus Assistant
+      </button>
+      <button id="asset-tab-btn-stock" class="asset-tab-btn" onclick="switchAssetTab('stock')">
+        <span>🔎</span> 2. Free Stock Search
+      </button>
+      <button id="asset-tab-btn-timeline" class="asset-tab-btn" onclick="switchAssetTab('timeline')">
+        <span>🎬</span> 3. Scene Visual Timeline (<span id="scene-count-badge">0</span>)
+      </button>
+    </div>
+
+    <!-- TAB 1: ChatGPT Plus Prompt & Paste Importer -->
+    <div id="asset-tab-prompt" class="asset-tab-content">
+      <div class="mb-4">
+        <div class="flex justify-between items-center mb-1">
+          <div class="font-bold text-sm">Step 1: Copy Tailored Prompt for ChatGPT Plus</div>
+          <span class="badge badge-info">ChatGPT-4o + Web Search &amp; DALL-E</span>
         </div>
-        <textarea id="chatgpt-prompt-text" class="form-textarea" rows="7" readonly style="font-family: monospace; font-size: 11px;"></textarea>
+        <div class="text-xs text-muted mb-2">
+          Paste this structured prompt into ChatGPT Plus. It uses ChatGPT's Web Search to find royalty-free image URLs or DALL-E 3 art for each scene timestamp.
+        </div>
+        <textarea id="chatgpt-prompt-text" class="form-textarea" rows="6" readonly style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px;"></textarea>
         <div class="flex gap-2 mt-2">
           <button class="btn btn-sm btn-primary" onclick="copyChatGPTAssetPrompt()">📋 Copy Prompt to Clipboard</button>
-          <a href="https://chatgpt.com" target="_blank" class="btn btn-sm btn-secondary">🌐 Open ChatGPT.com</a>
+          <a href="https://chatgpt.com" target="_blank" class="btn btn-sm btn-secondary">🌐 Open ChatGPT.com ↗</a>
         </div>
       </div>
 
-      <hr style="border: 0; border-top: 1px solid var(--border, #2e3446); margin: 16px 0;">
+      <hr style="border: 0; border-top: 1px solid var(--stitch-border); margin: 20px 0;">
 
       <div>
-        <div class="font-bold text-sm mb-1">Step 2: Paste ChatGPT URLs / Results</div>
-        <div class="text-xs text-secondary mb-2">
-          Paste the media URLs or the full response from ChatGPT Plus below. LocalShorts Studio will automatically download, format to 9:16 vertical (1080×1920) with blurred backdrop, and bind them to your video scenes!
+        <div class="font-bold text-sm mb-1">Step 2: Paste ChatGPT Response or Direct Image URLs</div>
+        <div class="text-xs text-muted mb-2">
+          Paste the entire response from ChatGPT Plus or any image URLs below. LocalShorts Studio will auto-extract the URLs, download them, and format them into 1080×1920 vertical scenes with blurred background padding.
         </div>
-        <textarea id="chatgpt-import-text" class="form-textarea" rows="4" placeholder="Paste direct image URLs or ChatGPT output here (e.g. Scene 1: https://... Scene 2: https://...)"></textarea>
-        <div class="flex gap-2 mt-2">
-          <button class="btn btn-sm btn-primary" style="background: #10b981; border-color: #10b981;" onclick="importChatGPTAssets()">⬇️ Download &amp; Attach Assets to Short</button>
-          <button class="btn btn-sm btn-secondary" onclick="triggerAISearchDirect()">🤖 Auto-Search with OpenAI API</button>
+        <textarea id="chatgpt-import-text" class="form-textarea" rows="4" placeholder="Paste direct image URLs or ChatGPT output here (e.g. Scene 1: https://... Scene 2: https://...)" oninput="updateDetectedUrlChips()"></textarea>
+
+        <div id="detected-urls-container" class="url-chip-list"></div>
+
+        <div class="flex gap-2 mt-3">
+          <button class="btn btn-emerald flex-1" onclick="importChatGPTAssets()">
+            ⬇️ Download, Verticalize &amp; Re-Render Short
+          </button>
+          <button class="btn btn-secondary" onclick="triggerAISearchDirect()">
+            🤖 Direct OpenAI API
+          </button>
         </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: Free Stock Media Search -->
+    <div id="asset-tab-stock" class="asset-tab-content" style="display: none;">
+      <div class="mb-3">
+        <div class="font-bold text-sm mb-1">Search Free Stock Photos &amp; Clips</div>
+        <div class="text-xs text-muted mb-2">Query Pexels, Pixabay, and Wikimedia Commons for royalty-free portrait media.</div>
+        <div class="flex gap-2">
+          <input type="text" id="stock-search-query" class="form-input" placeholder="Search visual concepts (e.g. artificial intelligence, streamer, laptop)...">
+          <button class="btn btn-primary" onclick="searchFreeStock()">Search Media</button>
+        </div>
+      </div>
+
+      <div id="stock-search-results" class="scene-strip-grid">
+        <div class="text-sm text-muted" style="grid-column: 1 / -1; padding: 20px; text-align: center;">
+          Type a visual keyword above and click Search Media.
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: Scene Visual Timeline -->
+    <div id="asset-tab-timeline" class="asset-tab-content" style="display: none;">
+      <div class="flex justify-between items-center mb-2">
+        <div class="font-bold text-sm">Visual Scene Plates Breakdown</div>
+        <span class="text-xs text-muted">Each scene automatically zooms/pans over 1080×1920 canvas</span>
+      </div>
+      <div id="scene-cards-container" class="scene-strip-grid">
+        <!-- Rendered dynamically by studio.js -->
       </div>
     </div>
   </div>
