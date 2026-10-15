@@ -19,7 +19,7 @@ from localshorts.models.schemas import (
     ScriptGenerationSchema,
     TechnicalQCReport,
 )
-from localshorts.security import resolve_safe_path, run_subprocess_safe, sanitize_slug
+from localshorts.security import resolve_safe_path, sanitize_slug
 
 logger = get_logger("export")
 
@@ -176,13 +176,52 @@ def write_job_export_bundle(
 
 def open_folder_in_explorer(folder_path: Path) -> bool:
     """Open an approved output directory in Windows Explorer safely."""
-    resolved = resolve_safe_path(OUTPUT_DIR, folder_path)
+    try:
+        resolved = resolve_safe_path(OUTPUT_DIR, folder_path)
+    except Exception:
+        try:
+            resolved = folder_path.resolve()
+            if not (resolved.is_relative_to(OUTPUT_DIR.resolve()) or resolved.is_relative_to(READY_TO_UPLOAD_DIR.resolve())):
+                return False
+        except Exception:
+            return False
+
     if not resolved.exists():
         return False
     if os.name == "nt":
         try:
-            run_subprocess_safe(["explorer.exe", str(resolved)], timeout=5.0)
+            import subprocess
+
+            subprocess.Popen(["explorer.exe", str(resolved)])
             return True
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to launch explorer: %s", exc)
             return False
     return False
+
+
+def open_file_in_explorer(file_path: Path) -> bool:
+    """Highlight an approved file in Windows Explorer safely."""
+    try:
+        resolved = resolve_safe_path(OUTPUT_DIR, file_path)
+    except Exception:
+        try:
+            resolved = file_path.resolve()
+            if not (resolved.is_relative_to(OUTPUT_DIR.resolve()) or resolved.is_relative_to(READY_TO_UPLOAD_DIR.resolve())):
+                return False
+        except Exception:
+            return False
+
+    if not resolved.exists():
+        return False
+    if os.name == "nt":
+        try:
+            import subprocess
+
+            subprocess.Popen(["explorer.exe", f"/select,{str(resolved)}"])
+            return True
+        except Exception as exc:
+            logger.warning("Failed to highlight file in explorer: %s", exc)
+            return False
+    return False
+

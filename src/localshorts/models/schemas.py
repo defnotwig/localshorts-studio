@@ -182,6 +182,9 @@ class ScenePlanItemSchema(BaseModel):
     media_asset_path: str = ""
     media_attribution: str = ""
     rendered_plate_path: str = ""
+    reframe_mode: str = "smart_crop"  # smart_crop, blur_pad, manual
+    focal_point_x: float = 50.0
+    focal_point_y: float = 50.0
 
 
 class CaptionCardSchema(BaseModel):
@@ -253,3 +256,52 @@ class HealthResponseSchema(BaseModel):
     thermal_state: str = "NORMAL"
     on_battery: bool = False
     free_disk_gb: float = 0.0
+
+
+class OpportunityType(str, Enum):
+    WHOP_CAMPAIGN = "whop_campaign"
+    CREATOR_TREND = "creator_trend"
+    INTERNET_TREND = "internet_trend"
+    TECH_STORY = "tech_story"
+    MANUAL_TOPIC = "manual_topic"
+
+
+class CampaignMetadata(BaseModel):
+    budget: str = ""
+    cpm_rate: str = "$1.00 / 1K views"
+    platforms: list[str] = Field(default_factory=lambda: ["YouTube Shorts", "TikTok", "Instagram Reels"])
+    deadline: str = ""
+    must_include: list[str] = Field(default_factory=list)
+    do_not_include: list[str] = Field(default_factory=list)
+    approved_assets_dir: str = ""
+    required_audio: str = ""
+    required_tags: list[str] = Field(default_factory=list)
+    submission_url: str = ""
+    campaign_status: str = "OPEN"
+    is_demo: bool = False
+
+
+class TrendMetadata(BaseModel):
+    velocity_score: int = 50
+    outlier_multiplier: float = 1.0
+    signals: dict[str, Any] = Field(default_factory=dict)
+    reasons: list[str] = Field(default_factory=list)
+    sources_count: int = 1
+    evidence_bundle: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContentOpportunitySchema(BaseModel):
+    id: str
+    opportunity_type: OpportunityType = OpportunityType.CREATOR_TREND
+    title: str
+    creator_or_brand: str = ""
+    headline: str = ""
+    summary: str = ""
+    url: str = ""
+    source_confidence: int = 75
+    opportunity_score: int = 80
+    created_at: str = ""
+    status: str = "ACTIVE"
+    campaign: CampaignMetadata | None = None
+    trend: TrendMetadata | None = None
+

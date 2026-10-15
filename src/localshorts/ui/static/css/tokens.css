@@ -1,0 +1,117 @@
+/**
+ * LocalShorts Studio — Obsidian Studio Design System Tokens
+ * Directly extracted from Google Stitch Canvas Project: projects/5588442246823867498
+ * Design System: Obsidian Studio (Dark Editorial Minimalist)
+ */
+
+:root {
+  /* Surfaces & Canvas */
+  --surface-base: #0a0e16;
+  --surface-dim: #0f131c;
+  --surface: #0f131c;
+  --surface-container-lowest: #0a0e16;
+  --surface-container-low: #181c24;
+  --surface-container: #1c2028;
+  --surface-container-high: #262a33;
+  --surface-container-highest: #31353e;
+  --surface-bright: #353942;
+  --surface-overlay: rgba(21, 28, 46, 0.95);
+
+  /* Text & On-Surfaces */
+  --text-primary: #dfe2ee;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --on-surface: #dfe2ee;
+  --on-surface-variant: #b9cacb;
+  --inverse-surface: #dfe2ee;
+  --inverse-on-surface: #2c3039;
+
+  /* Primary Brand & Accents (Electric Cyan) */
+  --primary: #e0fdff;
+  --primary-container: #00f2fe;
+  --primary-hover: #38bdf8;
+  --on-primary: #00373a;
+  --on-primary-container: #006a70;
+  --primary-fixed: #6ff6ff;
+  --surface-tint: #00dce6;
+
+  /* Secondary Accent (Emerald Green / Viral Momentum) */
+  --secondary: #4edea3;
+  --secondary-container: #00a572;
+  --on-secondary: #003824;
+  --on-secondary-container: #00311f;
+  --secondary-fixed: #6ffbbe;
+
+  /* Tertiary Accents */
+  --tertiary: #f1f8ff;
+  --tertiary-container: #b2e1ff;
+  --on-tertiary: #00354a;
+  --on-tertiary-container: #00678c;
+
+  /* Feedback & Alerts */
+  --error: #ffb4ab;
+  --error-container: #93000a;
+  --on-error: #690005;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --success: #10b981;
+  --info: #00f2fe;
+
+  /* Borders & Outlines */
+  --outline: #849495;
+  --outline-variant: #3a494b;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-card: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-glow: rgba(0, 242, 254, 0.45);
+
+  /* Typography Families */
+  --font-headline: "Archivo Narrow", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+
+  /* Typography Scales */
+  --text-display-lg: 48px;
+  --text-headline-xl: 36px;
+  --text-headline-lg: 24px;
+  --text-headline-md: 20px;
+  --text-body-lg: 16px;
+  --text-body-md: 14px;
+  --text-body-sm: 12px;
+  --text-label-md: 13px;
+  --text-label-sm: 11px;
+  --text-metric-bold: 28px;
+
+  /* Radii */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 9999px;
+
+  /* Spacing Scale */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 40px;
+
+  /* Layout Dimensions */
+  --sidebar-width: 220px;
+  --topbar-height: 56px;
+  --gutter-desktop: 24px;
+  --margin-desktop: 32px;
+
+  /* Elevation Shadows & Glows */
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.6);
+  --shadow-hover: 0 12px 30px -10px rgba(0, 0, 0, 0.8), 0 0 1px 1px rgba(0, 242, 254, 0.25);
+  --shadow-modal: 0 16px 32px -8px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(0, 242, 254, 0.2);
+  --cyan-glow: 0 0 16px -2px rgba(0, 242, 254, 0.35);
+  --emerald-glow: 0 0 12px -2px rgba(16, 185, 129, 0.4);
+
+  /* Motion Transitions */
+  --transition-fast: 120ms ease-out;
+  --transition-normal: 180ms ease-out;
+  --transition-smooth: 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}

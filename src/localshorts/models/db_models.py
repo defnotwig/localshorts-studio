@@ -221,3 +221,22 @@ class MediaCacheEntry(SQLModel, table=True):
     size_bytes: int = Field(default=0)
     created_at: str = Field(default_factory=utc_now_iso)
     last_used_at: str = Field(default_factory=utc_now_iso, index=True)
+
+
+class ContentOpportunity(SQLModel, table=True):
+    __tablename__ = "content_opportunities"
+
+    id: str = Field(primary_key=True)
+    opportunity_type: str = Field(default="creator_trend", index=True)  # whop_campaign, creator_trend, internet_trend, tech_story, manual_topic
+    title: str = Field(default="", index=True)
+    creator_or_brand: str = Field(default="")
+    headline: str = Field(default="")
+    summary: str = Field(default="")
+    url: str = Field(default="")
+    source_confidence: int = Field(default=75)
+    opportunity_score: int = Field(default=80, index=True)
+    created_at: str = Field(default_factory=utc_now_iso, index=True)
+    status: str = Field(default="ACTIVE", index=True)  # ACTIVE, SAVED, DISMISSED, QUEUED
+    campaign_metadata_json: str = Field(default="{}")
+    trend_metadata_json: str = Field(default="{}")
+

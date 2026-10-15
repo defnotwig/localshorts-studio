@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -12,15 +13,23 @@ from sqlmodel import select
 
 from localshorts.api.generation import serialize_job
 from localshorts.api.health import get_health
-from localshorts.config import APP_VERSION, AUTHORIZED_MEDIA_DIR, LOGS_DIR, TEMPLATES_DIR
+from localshorts.config import (
+    APP_VERSION,
+    AUTHORIZED_MEDIA_DIR,
+    LOGS_DIR,
+    OUTPUT_DIR,
+    TEMPLATES_DIR,
+)
 from localshorts.database import get_app_settings, get_session
 from localshorts.models.db_models import ShortJob, TrendItem, WatchedTopic
 from localshorts.models.schemas import CaptionPreset, VisualPreset
+from localshorts.security import resolve_safe_path
 from localshorts.services.hardware import detect_hardware
 from localshorts.services.media import get_storage_and_cache_stats
 from localshorts.services.ollama import OllamaService
 from localshorts.services.scheduler import count_jobs_created_today
 from localshorts.services.tts import AVAILABLE_VOICES
+from localshorts.services.whop_provider import WhopProvider
 
 router = APIRouter(tags=["views"])
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -28,13 +37,16 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 PAGE_TITLES = {
     "wizard": "First-Run Hardware & Pipeline Wizard",
     "dashboard": "Studio Production Dashboard",
+    "discover": "Discover & Campaign Opportunities",
     "research": "Trend Discovery & Source Confidence",
     "create": "Create New Short",
+    "studio": "Story Studio & Scene Inspector",
     "queue": "Sequential Production Queue",
     "library": "Output Library & Ready-to-Upload",
     "settings": "Studio Settings & Watchlist",
     "diagnostics": "System Diagnostics & Telemetry",
 }
+
 
 
 def _enrich_job_for_template(j_dict: dict[str, Any]) -> dict[str, Any]:
@@ -143,6 +155,20 @@ async def _common_context(request: Request, active_page: str) -> dict[str, Any]:
 
 
 @router.get("/", response_class=HTMLResponse)
+@router.get("/discover", response_class=HTMLResponse)
+async def discover_view(request: Request) -> HTMLResponse:
+    ctx = await _common_context(request, "discover")
+    provider = WhopProvider()
+    opportunities = provider.get_all_opportunities()
+    ctx["opportunities"] = opportunities
+    with get_session() as session:
+        trends = list(session.exec(select(TrendItem).order_by(TrendItem.trend_score.desc()).limit(20)).all())
+        jobs = list(session.exec(select(ShortJob).order_by(ShortJob.created_at.desc()).limit(10)).all())
+    ctx["trends"] = [_enrich_trend_for_template(t) for t in trends]
+    ctx["recent_jobs"] = [_enrich_job_for_template(serialize_job(j)) for j in jobs]
+    return templates.TemplateResponse(request, "discover.html", ctx)
+
+
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_view(request: Request) -> HTMLResponse:
     ctx = await _common_context(request, "dashboard")
@@ -156,6 +182,165 @@ async def dashboard_view(request: Request) -> HTMLResponse:
     ctx["recent_jobs"] = [_enrich_job_for_template(serialize_job(j)) for j in recent_jobs]
     ctx["top_trends"] = [_enrich_trend_for_template(t) for t in trends]
     return templates.TemplateResponse(request, "dashboard.html", ctx)
+
+
+@router.get("/studio", response_class=HTMLResponse)
+@router.get("/studio/{job_id}", response_class=HTMLResponse)
+async def studio_view(request: Request, job_id: str | None = None) -> HTMLResponse:
+    ctx = await _common_context(request, "studio")
+    with get_session() as session:
+        target_job = None
+        if job_id:
+            target_job = session.get(ShortJob, job_id)
+        if not target_job:
+            target_job = session.exec(select(ShortJob).order_by(ShortJob.created_at.desc()).limit(1)).first()
+        recent_jobs_db = list(session.exec(select(ShortJob).order_by(ShortJob.created_at.desc()).limit(15)).all())
+
+    ctx["recent_jobs"] = [_enrich_job_for_template(serialize_job(j)) for j in recent_jobs_db]
+
+    if target_job:
+        job_data = _enrich_job_for_template(serialize_job(target_job))
+        ctx["current_job"] = job_data
+
+        scenes: list[dict[str, Any]] = []
+        if target_job.output_dir:
+            try:
+                job_dir = resolve_safe_path(OUTPUT_DIR, target_job.output_dir)
+                script_file = job_dir / "script.json"
+                if script_file.exists():
+                    script_payload = json.loads(script_file.read_text(encoding="utf-8"))
+                    raw_scenes = script_payload.get("scenes", [])
+                    for i, sc in enumerate(raw_scenes, start=1):
+                        scenes.append({
+                            "index": i,
+                            "duration_s": sc.get("duration_s", 4.0),
+                            "voiceover_text": sc.get("voiceover_text") or sc.get("narration", ""),
+                            "search_keyword": sc.get("visual_search_keyword") or sc.get("search_keyword", ""),
+                            "visual_type": sc.get("visual_type", "STOCK_FOOTAGE"),
+                            "asset_path": sc.get("asset_path", ""),
+                            "asset_label": sc.get("asset_label") or Path(sc.get("asset_path", "clip.mp4")).name,
+                            "confidence": sc.get("confidence", 85),
+                            "asset_rights": sc.get("asset_rights", "Commercial Creative Commons / Whop Approved"),
+                            "confidence_label": "badge-evidence" if sc.get("confidence", 85) >= 80 else "badge-confidence",
+                            "reframe_mode": sc.get("reframe_mode", "smart_crop"),
+                            "focal_point_x": sc.get("focal_point_x", 50),
+                            "focal_point_y": sc.get("focal_point_y", 50),
+                        })
+            except Exception:
+                pass
+
+        if not scenes:
+            scenes = [
+                {
+                    "index": 1,
+                    "duration_s": 3.2,
+                    "voiceover_text": target_job.headline or "Wait until you see how this creator unlocked $10k in a week...",
+                    "search_keyword": target_job.topic or "creator economy",
+                    "visual_type": "PRIMARY_EVIDENCE",
+                    "asset_path": "",
+                    "asset_label": "hook_evidence.jpg",
+                    "confidence": 92,
+                    "asset_rights": "Whop Partner Content Kit",
+                    "confidence_label": "badge-evidence",
+                    "reframe_mode": "smart_crop",
+                    "focal_point_x": 50,
+                    "focal_point_y": 45,
+                },
+                {
+                    "index": 2,
+                    "duration_s": 4.5,
+                    "voiceover_text": "Instead of churning generic edits, they focused strictly on high-retention clipping moments.",
+                    "search_keyword": "editing timeline viral clip",
+                    "visual_type": "STOCK_FOOTAGE",
+                    "asset_path": "",
+                    "asset_label": "timeline_broll.mp4",
+                    "confidence": 88,
+                    "asset_rights": "Creative Commons 0",
+                    "confidence_label": "badge-evidence",
+                    "reframe_mode": "blur_pad",
+                    "focal_point_x": 50,
+                    "focal_point_y": 50,
+                },
+                {
+                    "index": 3,
+                    "duration_s": 4.0,
+                    "voiceover_text": "Here is the exact framework you can replicate right now.",
+                    "search_keyword": "growth metrics analytics chart",
+                    "visual_type": "DATA_CALLOUT",
+                    "asset_path": "",
+                    "asset_label": "metrics_plate.png",
+                    "confidence": 78,
+                    "asset_rights": "Local Procedural Asset",
+                    "confidence_label": "badge-confidence",
+                    "reframe_mode": "smart_crop",
+                    "focal_point_x": 50,
+                    "focal_point_y": 50,
+                },
+            ]
+        ctx["scenes"] = scenes
+    else:
+        ctx["current_job"] = {
+            "id": "demo_studio_job",
+            "topic": "Creator Economy & Viral Clipping",
+            "topic_title": "Creator Economy & Viral Clipping",
+            "headline": "Wait until you see how this creator unlocked $10k in a week...",
+            "state": "READY",
+            "quality_score": 94,
+            "duration_sec": 24.5,
+            "final_video_path": "",
+            "encoder_used": "h264_nvenc",
+            "slug": "creator-economy-viral-clipping",
+        }
+        ctx["scenes"] = [
+            {
+                "index": 1,
+                "duration_s": 3.2,
+                "voiceover_text": "Wait until you see how this creator unlocked $10k in a week...",
+                "search_keyword": "creator economy",
+                "visual_type": "PRIMARY_EVIDENCE",
+                "asset_path": "",
+                "asset_label": "hook_evidence.jpg",
+                "confidence": 92,
+                "asset_rights": "Whop Partner Content Kit",
+                "confidence_label": "badge-evidence",
+                "reframe_mode": "smart_crop",
+                "focal_point_x": 50,
+                "focal_point_y": 45,
+            },
+            {
+                "index": 2,
+                "duration_s": 4.5,
+                "voiceover_text": "Instead of churning generic edits, they focused strictly on high-retention clipping moments.",
+                "search_keyword": "editing timeline viral clip",
+                "visual_type": "STOCK_FOOTAGE",
+                "asset_path": "",
+                "asset_label": "timeline_broll.mp4",
+                "confidence": 88,
+                "asset_rights": "Creative Commons 0",
+                "confidence_label": "badge-evidence",
+                "reframe_mode": "blur_pad",
+                "focal_point_x": 50,
+                "focal_point_y": 50,
+            },
+            {
+                "index": 3,
+                "duration_s": 4.0,
+                "voiceover_text": "Here is the exact framework you can replicate right now.",
+                "search_keyword": "growth metrics analytics chart",
+                "visual_type": "DATA_CALLOUT",
+                "asset_path": "",
+                "asset_label": "metrics_plate.png",
+                "confidence": 78,
+                "asset_rights": "Local Procedural Asset",
+                "confidence_label": "badge-confidence",
+                "reframe_mode": "smart_crop",
+                "focal_point_x": 50,
+                "focal_point_y": 50,
+            },
+        ]
+
+    return templates.TemplateResponse(request, "studio.html", ctx)
+
 
 
 @router.get("/wizard", response_class=HTMLResponse)

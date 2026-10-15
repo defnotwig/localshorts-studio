@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Sequence
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from localshorts.config import FONTS_DIR
 from localshorts.logging_config import get_logger
@@ -150,6 +150,82 @@ def _create_gradient_background(
     return img
 
 
+def reframe_image_for_frame(
+    img: Image.Image,
+    frame_w: int,
+    frame_h: int,
+    mode: str = "smart_crop",
+    focal_x: float = 50.0,
+    focal_y: float = 50.0,
+) -> Image.Image:
+    """
+    Intelligently reframe an image into (frame_w, frame_h) using smart saliency/entropy cropping,
+    Gaussian blur backdrop containment, or user-guided manual focal point.
+    """
+    if mode == "blur_pad":
+        # 1. Scaled blurred background that covers entire frame
+        bg_scale = max(frame_w / max(1, img.width), frame_h / max(1, img.height))
+        bg_w, bg_h = max(frame_w, int(img.width * bg_scale)), max(frame_h, int(img.height * bg_scale))
+        bg = img.resize((bg_w, bg_h), Image.Resampling.BILINEAR)
+        bg_left = (bg_w - frame_w) // 2
+        bg_top = (bg_h - frame_h) // 2
+        bg_cropped = bg.crop((bg_left, bg_top, bg_left + frame_w, bg_top + frame_h))
+        bg_blurred = bg_cropped.filter(ImageFilter.GaussianBlur(radius=24))
+        dimmer = Image.new("RGBA", (frame_w, frame_h), (0, 0, 0, 90))
+        bg_composite = Image.alpha_composite(bg_blurred.convert("RGBA"), dimmer).convert("RGB")
+
+        # 2. Foreground image contained cleanly inside frame
+        fg_scale = min(frame_w / max(1, img.width), frame_h / max(1, img.height))
+        fg_w, fg_h = max(1, int(img.width * fg_scale)), max(1, int(img.height * fg_scale))
+        fg_resized = img.resize((fg_w, fg_h), Image.Resampling.LANCZOS)
+        offset_x = (frame_w - fg_w) // 2
+        offset_y = (frame_h - fg_h) // 2
+        bg_composite.paste(fg_resized, (offset_x, offset_y))
+        return bg_composite
+
+    # Scale to cover (frame_w, frame_h)
+    scale = max(frame_w / max(1, img.width), frame_h / max(1, img.height))
+    new_w, new_h = max(frame_w, int(round(img.width * scale))), max(frame_h, int(round(img.height * scale)))
+    resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+    if mode == "manual":
+        cx = int((focal_x / 100.0) * new_w)
+        cy = int((focal_y / 100.0) * new_h)
+        left = max(0, min(new_w - frame_w, cx - frame_w // 2))
+        top = max(0, min(new_h - frame_h, cy - frame_h // 2))
+        return resized.crop((left, top, left + frame_w, top + frame_h))
+
+    # Smart Saliency / Entropy Crop
+    left = (new_w - frame_w) // 2
+    top = (new_h - frame_h) // 2
+
+    try:
+        gray = np.array(resized.convert("L"), dtype=np.float32)
+        if new_w > frame_w:
+            grad_x = np.abs(np.diff(gray, axis=1))
+            col_energy = np.sum(grad_x, axis=0)
+            window = frame_w
+            if len(col_energy) > window:
+                cumsum = np.cumsum(np.insert(col_energy, 0, 0))
+                window_energy = cumsum[window:] - cumsum[:-window]
+                best_left = int(np.argmax(window_energy))
+                left = max(0, min(new_w - frame_w, best_left))
+        elif new_h > frame_h:
+            grad_y = np.abs(np.diff(gray, axis=0))
+            row_energy = np.sum(grad_y, axis=1)
+            window = frame_h
+            if len(row_energy) > window:
+                cumsum = np.cumsum(np.insert(row_energy, 0, 0))
+                window_energy = cumsum[window:] - cumsum[:-window]
+                best_top = int(np.argmax(window_energy))
+                top = max(0, min(new_h - frame_h, best_top))
+    except Exception:
+        left = (new_w - frame_w) // 2
+        top = (new_h - frame_h) // 2
+
+    return resized.crop((left, top, left + frame_w, top + frame_h))
+
+
 def render_scene_plate(
     scene: ScenePlanItemSchema,
     total_scenes: int,
@@ -221,20 +297,19 @@ def render_scene_plate(
         if media_p.exists() and media_p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
             try:
                 ext_img = Image.open(media_p).convert("RGB")
-                # Center-crop/fit into 936x620 hero frame
+                # Intelligently reframe image into 936x620 hero frame
                 frame_w, frame_h = 936, 620
-                ext_ratio = ext_img.width / float(max(1, ext_img.height))
-                target_ratio = frame_w / float(frame_h)
-                if ext_ratio > target_ratio:
-                    new_h = frame_h
-                    new_w = int(new_h * ext_ratio)
-                else:
-                    new_w = frame_w
-                    new_h = int(new_w / max(0.1, ext_ratio))
-                resized = ext_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                left = (new_w - frame_w) // 2
-                top = (new_h - frame_h) // 2
-                cropped = resized.crop((left, top, left + frame_w, top + frame_h))
+                mode = getattr(scene, "reframe_mode", "smart_crop") or "smart_crop"
+                focal_x = getattr(scene, "focal_point_x", 50.0) or 50.0
+                focal_y = getattr(scene, "focal_point_y", 50.0) or 50.0
+                cropped = reframe_image_for_frame(
+                    ext_img,
+                    frame_w=frame_w,
+                    frame_h=frame_h,
+                    mode=mode,
+                    focal_x=focal_x,
+                    focal_y=focal_y,
+                )
 
                 # Draw hero card frame at Y = 230..850
                 draw.rounded_rectangle(

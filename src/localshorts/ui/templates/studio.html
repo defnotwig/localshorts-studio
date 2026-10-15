@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="studio-container" style="display: flex; flex-direction: column; gap: var(--space-md); height: calc(100vh - var(--topbar-height) - 40px);">
+
+  <!-- Studio Header Strip -->
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); flex-wrap: wrap;">
+    <div style="display: flex; align-items: center; gap: var(--space-md);">
+      <a href="/queue" class="btn btn-ghost btn-sm">← Back to Queue</a>
+      <h2 style="font-family: var(--font-headline); font-size: var(--text-headline-lg); margin: 0; font-weight: 700;">
+        {{ current_job.topic_title if current_job else "No Active Video Selected" }}
+      </h2>
+      {% if current_job %}
+      <span class="badge stage-ready font-mono">{{ current_job.state }}</span>
+      <span class="badge badge-confidence font-mono">QC {{ current_job.quality_score }} / 100</span>
+      {% endif %}
+    </div>
+
+    <!-- Right Global Actions (Fast Re-Render, Export) -->
+    <div style="display: flex; align-items: center; gap: var(--space-sm);">
+      {% if current_job %}
+      <button class="btn btn-secondary btn-sm" onclick="regenerateStage('{{ current_job.id }}', 'voice')">
+        <span>🎙️ Regen Voice</span>
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="regenerateStage('{{ current_job.id }}', 'captions')">
+        <span>💬 Regen Captions</span>
+      </button>
+      <button class="btn btn-primary btn-sm" onclick="regenerateStage('{{ current_job.id }}', 'render')">
+        <span>⚡ Fast Re-Render MP4</span>
+      </button>
+      <button class="btn btn-ghost btn-icon btn-sm" onclick="openJobFolderSafely('{{ current_job.id }}')" title="Open project folder in Windows Explorer">
+        <span>📂</span>
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if current_job %}
+  <!-- 3-Panel Studio Workspace Layout -->
+  <div class="studio-workspace">
+
+    <!-- LEFT PANEL: Story, Hook, Beats & Script -->
+    <div class="studio-panel">
+      <div class="studio-panel-header">
+        <div style="display: flex; gap: var(--space-sm);">
+          <span style="font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-primary);">Story Beats</span>
+          <span class="badge badge-platform font-mono">{{ scenes | length }} Scenes</span>
+        </div>
+        <button class="btn btn-xs btn-ghost" onclick="regenerateStage('{{ current_job.id }}', 'script')">Regen Script</button>
+      </div>
+
+      <div class="studio-panel-body" style="display: flex; flex-direction: column; gap: var(--space-sm);">
+        <!-- Hook Callout Card (First 3 Seconds) -->
+        <div style="background: rgba(250, 204, 21, 0.08); border: 1px solid rgba(250, 204, 21, 0.3); border-radius: var(--radius-md); padding: 10px 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+            <span style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #facc15;">3-Second Retention Hook</span>
+            <span style="font-size: 10px; font-family: var(--font-mono); color: var(--text-secondary);">0.0s – 3.2s</span>
+          </div>
+          <div style="font-size: 13px; font-weight: 600; color: #fff; font-style: italic;">
+            "{{ current_job.headline }}"
+          </div>
+        </div>
+
+        <!-- Interactive Scene Beat List -->
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 4px;">
+          {% for sc in scenes %}
+          <div id="scene-beat-{{ sc.index if sc.index is defined else loop.index0 }}" 
+               class="scene-beat-item {% if loop.first %}active{% endif %}" 
+               onclick="selectStudioScene({{ sc.index if sc.index is defined else loop.index0 }}, {{ sc.start_s if sc.start_s is defined else sc.start | default(0.0) }})">
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 32px; flex-shrink: 0;">
+              <span style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--primary-container);">
+                #{{ (sc.index if sc.index is defined else loop.index0) + 1 }}
+              </span>
+              <span style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono);">
+                {{ (sc.start_s if sc.start_s is defined else sc.start | default(0.0)) | round(1) }}s
+              </span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 2px; flex: 1; overflow: hidden;">
+              <div style="font-size: 12px; font-weight: 500; color: var(--text-primary); line-height: 1.35;" class="truncate">
+                {{ sc.spoken_text or sc.caption_text or "Context & evidence beat" }}
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-secondary);">
+                <span>{{ sc.visual_type or 'image' }}</span>
+                <span>·</span>
+                <span class="truncate">{{ sc.visual_intent or sc.query or 'Topical Creator Asset' }}</span>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER PANEL: 9:16 Vertical Video Canvas -->
+    <div class="studio-panel" style="background: var(--surface-container-lowest);">
+      <div class="studio-panel-header" style="justify-content: space-between;">
+        <span style="font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">9:16 Canvas Viewport</span>
+        <div style="display: flex; gap: var(--space-xs);">
+          <button id="safe-zone-toggle" class="btn btn-xs btn-ghost" onclick="toggleSafeZoneGuide()">Safe Zone: ON</button>
+          <button id="phone-frame-toggle" class="btn btn-xs btn-ghost" onclick="togglePhoneFrameGuide()">Phone Shell</button>
+        </div>
+      </div>
+
+      <div class="player-container">
+        <!-- 9:16 Vertical Video Container -->
+        <div id="studio-video-frame" class="video-frame-916">
+          <video id="studio-video-element" src="/api/library/{{ current_job.id }}/video" preload="metadata" ontimeupdate="onStudioVideoTimeUpdate()"></video>
+          
+          <!-- Caption Safe Zone Overlay Guide (Overlayed on toggle) -->
+          <div id="safe-zone-overlay" style="position: absolute; inset: 0; border: 2px dashed rgba(56, 189, 248, 0.4); pointer-events: none; margin: 15% 10% 20% 10%; display: flex; align-items: center; justify-content: center;">
+            <span style="font-size: 10px; color: rgba(56, 189, 248, 0.6); font-family: var(--font-mono); text-transform: uppercase;">Caption Safe Zone</span>
+          </div>
+        </div>
+
+        <!-- Player Transport Bar -->
+        <div class="player-transport-bar">
+          <button class="btn btn-icon btn-sm btn-ghost" onclick="stepStudioScene(-1)" title="Previous Scene">⏮</button>
+          <button id="studio-play-btn" class="btn btn-icon btn-sm btn-primary" onclick="toggleStudioPlayback()">▶</button>
+          <button class="btn btn-icon btn-sm btn-ghost" onclick="stepStudioScene(1)" title="Next Scene">⏭</button>
+
+          <!-- Scrubber Bar -->
+          <input id="studio-scrubber" type="range" min="0" max="{{ current_job.duration_sec or 24 }}" step="0.1" value="0" 
+                 style="flex: 1; accent-color: var(--primary-container); cursor: pointer;" 
+                 oninput="seekStudioVideo(this.value)">
+
+          <!-- Time Display -->
+          <span id="studio-time-display" style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); width: 70px; text-align: right;">
+            0:00 / {{ '%0.1f' | format(current_job.duration_sec or 24) }}s
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL: Contextual Scene Inspector & Asset Swapper -->
+    <div class="studio-panel">
+      <div class="studio-panel-header">
+        <span id="inspector-scene-title" style="font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-primary);">
+          Scene Inspector (Scene #1)
+        </span>
+        <span id="inspector-scene-time" class="badge badge-platform font-mono">0.0s – 3.2s</span>
+      </div>
+
+      <div class="studio-panel-body" style="display: flex; flex-direction: column; gap: var(--space-md);">
+        
+        <!-- Active Scene Plate Preview Thumbnail -->
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Current Visual Plate</span>
+          <div style="position: relative; width: 100%; aspect-ratio: 16 / 9; background: var(--surface-container-highest); border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border-subtle);">
+            <img id="inspector-plate-img" src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=400&q=80" alt="Scene Plate" style="width: 100%; height: 100%; object-fit: cover;">
+            <div style="position: absolute; bottom: 6px; left: 8px; font-size: 10px; background: rgba(0,0,0,0.7); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono);">
+              <span id="inspector-plate-type">Image</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Per-Scene Asset Confidence Card (Explainable Decision Metrics) -->
+        <div class="confidence-card">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border-subtle); padding-bottom: 4px;">
+            Asset Confidence &amp; Rights
+          </div>
+          <div class="confidence-row">
+            <span class="confidence-label">Semantic Relevance:</span>
+            <span id="conf-relevance" class="confidence-value text-emerald">94 / 100</span>
+          </div>
+          <div class="confidence-row">
+            <span class="confidence-label">Rights Confidence:</span>
+            <span id="conf-rights" class="confidence-value" style="color: var(--secondary);">Campaign Approved</span>
+          </div>
+          <div class="confidence-row">
+            <span class="confidence-label">Reuse History:</span>
+            <span id="conf-reuse" class="confidence-value">Never Used (0×)</span>
+          </div>
+          <div class="confidence-row">
+            <span class="confidence-label">Source Origin:</span>
+            <span id="conf-source" class="confidence-value">Campaign Assets</span>
+          </div>
+        </div>
+
+        <!-- Subject-Aware Reframing Controls -->
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Subject-Aware Reframing</span>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+            <button id="reframe-smart-crop-btn" class="btn btn-xs btn-primary" onclick="setReframeMode('smart_crop')">Smart Crop (9:16)</button>
+            <button id="reframe-contain-blur-btn" class="btn btn-xs btn-secondary" onclick="setReframeMode('contain_blur')">Contain + Blur</button>
+          </div>
+          <!-- Manual Focal Point Sliders -->
+          <div style="background: var(--surface-container); padding: 8px 12px; border-radius: var(--radius-sm); display: flex; flex-direction: column; gap: 4px; margin-top: 4px;">
+            <div class="flex justify-between text-xs">
+              <span class="text-secondary">Focal Point X:</span>
+              <span id="focal-x-val" class="font-mono">50%</span>
+            </div>
+            <input type="range" min="0" max="100" value="50" style="accent-color: var(--primary-container);" oninput="updateFocalPoint('x', this.value)">
+            <div class="flex justify-between text-xs mt-1">
+              <span class="text-secondary">Focal Point Y:</span>
+              <span id="focal-y-val" class="font-mono">50%</span>
+            </div>
+            <input type="range" min="0" max="100" value="50" style="accent-color: var(--primary-container);" oninput="updateFocalPoint('y', this.value)">
+          </div>
+        </div>
+
+        <!-- Asset Replacement Action -->
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-top: auto;">
+          <button class="btn btn-primary" onclick="openAssetBrowserDrawer()">
+            <span>🔍 Find Better Asset / Replace</span>
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="copySceneChatGPTAssetPrompt()">
+            <span>✨ ChatGPT Asset Prompt</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+  {% else %}
+  <!-- Empty State when no jobs exist -->
+  <div class="card" style="padding: 48px; text-align: center; margin: 40px auto; max-width: 500px;">
+    <div style="font-size: 40px; margin-bottom: 12px;">🎬</div>
+    <h3 style="font-family: var(--font-headline); font-size: var(--text-headline-lg); margin-bottom: 6px;">No Video Selected in Story Studio</h3>
+    <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">Pick a candidate Short from the queue or create one from Discover to begin scene editing and asset tuning.</p>
+    <a href="/" class="btn btn-primary">Go to Discover Hub →</a>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Asset Browser Drawer / Modal -->
+<div id="asset-browser-drawer" class="modal-overlay hidden" onclick="closeAssetBrowserDrawer(event)">
+  <div class="modal-dialog" style="max-width: 760px;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 18px;">🖼️</span>
+        <h3 style="font-family: var(--font-headline); font-size: var(--text-headline-md); margin: 0;">Asset Browser — Replace Scene Visual</h3>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeAssetBrowserDrawer()">✕</button>
+    </div>
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: var(--space-md);">
+      <!-- Search Input -->
+      <div style="display: flex; gap: var(--space-sm);">
+        <input id="asset-search-query" type="text" placeholder="Search Wikimedia Commons, Pexels, Pixabay..." 
+               style="flex: 1; background: var(--surface-container); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 8px 12px; color: var(--text-primary); font-size: 13px;"
+               onkeydown="if(event.key==='Enter') searchStockAssetsForStudio()">
+        <button class="btn btn-primary btn-sm" onclick="searchStockAssetsForStudio()">Search</button>
+      </div>
+
+      <!-- Asset Results Grid -->
+      <div id="asset-results-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--space-sm); max-height: 400px; overflow-y: auto;">
+        <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 40px;">
+          Type a search term above to find rights-safe images and video footage.
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeAssetBrowserDrawer()">Cancel</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

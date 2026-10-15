@@ -9,7 +9,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from localshorts.api import generation, health, library, system, trends, views
+from localshorts.api import campaigns, generation, health, library, system, trends, views
 from localshorts.api import settings as settings_api
 from localshorts.config import APP_VERSION, STATIC_DIR, ensure_directories, settings
 from localshorts.database import get_app_settings, init_db
@@ -58,6 +58,7 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 app.include_router(health.router)
+app.include_router(campaigns.router)
 app.include_router(trends.router)
 app.include_router(generation.router)
 app.include_router(library.router)

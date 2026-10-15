@@ -1,51 +1,119 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="card mb-4">
-  <div class="card-header">
+<div class="library-container" style="display: flex; flex-direction: column; gap: var(--space-md);">
+
+  <!-- Library Header Strip -->
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); flex-wrap: wrap;">
     <div>
-      <div class="card-title">Output Library &amp; Ready-to-Upload Shorts</div>
-      <div class="card-subtitle">All rendered 1080×1920 MP4s with companion metadata, captions, QC breakdown, and source manifest</div>
-    </div>
-    <a href="/create" class="btn btn-primary">+ Create New Short</a>
-  </div>
-</div>
-
-{% if jobs %}
-<div class="grid-3">
-  {% for j in jobs %}
-  <div class="card">
-    <div class="flex justify-between items-center mb-2">
-      <span class="badge {% if j.state == 'READY' %}badge-success{% else %}badge-danger{% endif %}">{{ j.state }}</span>
-      <span class="badge badge-purple">QC {{ j.quality_score }}/100</span>
-    </div>
-    <div class="font-bold text-sm mb-2">{{ j.topic_title }}</div>
-    <div class="text-xs mono text-muted mb-3">
-      {{ j.slug }} · {{ j.duration_sec | round(1) }}s · {{ j.encoder_used }}
+      <h1 style="font-family: var(--font-headline); font-size: var(--text-headline-xl); font-weight: 700; margin: 0; line-height: 1.1; letter-spacing: -0.02em;">
+        Media Library
+      </h1>
+      <p style="margin: 2px 0 0; color: var(--text-secondary); font-size: var(--text-body-sm);">
+        Rendered 1080×1920 MP4s ready for YouTube Shorts, TikTok, and Instagram Reels.
+      </p>
     </div>
 
-    {% if j.final_video_path %}
-    <div class="video-preview-box mb-3">
-      <video controls preload="metadata" poster="/api/library/{{ j.id }}/thumbnail">
-        <source src="/api/library/{{ j.id }}/video" type="video/mp4">
-      </video>
-    </div>
-    {% endif %}
-
-    <div class="text-xs text-secondary mb-3">
-      <strong>Spoken Script:</strong> {{ j.script_text[:180] }}{% if j.script_text | length > 180 %}...{% endif %}
-    </div>
-
-    <div class="flex gap-2" style="flex-wrap: wrap;">
-      <a href="/api/library/{{ j.id }}/video" download="{{ j.slug }}_final.mp4" class="btn btn-sm btn-primary">Download MP4</a>
-      <button class="btn btn-sm btn-secondary" onclick="regenerateStage({{ j.id }}, 'CAPTIONS')">Re-Style Captions</button>
-      <button class="btn btn-sm btn-secondary" onclick="regenerateStage({{ j.id }}, 'RENDER')">Re-Encode</button>
+    <!-- Actions -->
+    <div style="display: flex; align-items: center; gap: var(--space-sm);">
+      <button class="btn btn-secondary btn-sm" onclick="openReadyFolderSafely()">
+        <span>📂 Open Ready-to-Upload Folder</span>
+      </button>
+      <a href="/create" class="btn btn-primary btn-sm">
+        <span>+ Create Short</span>
+      </a>
     </div>
   </div>
-  {% endfor %}
+
+  {% if jobs %}
+  <!-- Media Grid (Auto-Fill Responsive Cards) -->
+  <div class="card-grid" style="grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));">
+    {% for j in jobs %}
+    <div class="card" style="display: flex; flex-direction: column; gap: var(--space-sm); padding: 14px; position: relative;">
+      
+      <!-- Video Frame (9:16 Aspect Preview Container) -->
+      <div style="position: relative; aspect-ratio: 16/9; background: #000; border-radius: var(--radius-sm); overflow: hidden; display: flex; align-items: center; justify-content: center;">
+        {% if j.final_video_path %}
+        <video id="lib-video-{{ j.id }}" preload="metadata" poster="/api/library/{{ j.id }}/thumbnail" style="width: 100%; height: 100%; object-fit: contain;">
+          <source src="/api/library/{{ j.id }}/video" type="video/mp4">
+        </video>
+        <button class="btn btn-icon" style="position: absolute; background: rgba(10,14,22,0.7); backdrop-filter: blur(4px); border-radius: 50%; width: 44px; height: 44px; font-size: 18px; border: 1px solid var(--border-subtle); color: #fff;" onclick="toggleInlineVideoPlay('lib-video-{{ j.id }}', this)">
+          ▶
+        </button>
+        {% else %}
+        <div style="color: var(--text-muted); font-size: 12px; font-family: var(--font-mono);">No Video Stream</div>
+        {% endif %}
+
+        <!-- Top Badges Overlay -->
+        <div style="position: absolute; top: 8px; left: 8px; display: flex; gap: 6px;">
+          <span class="badge {% if j.state == 'READY' %}stage-ready{% else %}badge-warning{% endif %} font-mono">{{ j.state }}</span>
+          <span class="badge badge-confidence font-mono">QC {{ j.quality_score }}/100</span>
+        </div>
+
+        <!-- Duration & Encoder Overlay -->
+        <div style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.8); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 11px; color: #fff;">
+          {{ j.duration_sec | round(1) }}s · {{ j.encoder_used }}
+        </div>
+      </div>
+
+      <!-- Video Details -->
+      <div>
+        <div style="font-weight: 700; font-size: 14px; line-height: 1.3; color: var(--text-primary); margin-bottom: 4px;">
+          {{ j.topic_title }}
+        </div>
+        <div style="font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary); margin-bottom: 8px;">
+          {{ j.slug }}
+        </div>
+        <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+          "{{ j.headline or j.script_text }}"
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border-subtle); flex-wrap: wrap;">
+        <div style="display: flex; gap: 6px;">
+          <a href="/studio/{{ j.id }}" class="btn btn-xs btn-primary">
+            <span>Studio</span>
+          </a>
+          <a href="/api/library/{{ j.id }}/video" download="{{ j.slug }}.mp4" class="btn btn-xs btn-secondary">
+            <span>Download</span>
+          </a>
+        </div>
+        <div style="display: flex; gap: 4px;">
+          <button class="btn btn-xs btn-ghost btn-icon" onclick="openJobFolderSafely('{{ j.id }}')" title="Open Project Folder in Explorer">
+            <span>📂</span>
+          </button>
+          <button class="btn btn-xs btn-ghost btn-icon" onclick="openJobFileSafely('{{ j.id }}')" title="Highlight Video File in Explorer">
+            <span>🎯</span>
+          </button>
+          <button class="btn btn-xs btn-ghost btn-icon" onclick="copyTextToClipboard('{{ j.final_video_path }}')" title="Copy File Path">
+            <span>📋</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <!-- Empty State -->
+  <div class="card" style="text-align: center; padding: 48px var(--space-md);">
+    <div style="font-size: 32px; margin-bottom: 8px;">🎬</div>
+    <h3 style="font-size: var(--text-headline-sm); font-weight: 700; margin-bottom: 4px;">No Rendered Shorts Yet</h3>
+    <p style="color: var(--text-secondary); font-size: var(--text-body-sm); max-width: 440px; margin: 0 auto 16px;">
+      Explore viral opportunities or trigger a fast smoke test to render your first verified 1080×1920 Short.
+    </p>
+    <div style="display: flex; justify-content: center; gap: var(--space-sm);">
+      <button class="btn btn-primary" onclick="triggerSmokeTest()">
+        <span>⚡ 1-Click Smoke Test</span>
+      </button>
+      <a href="/discover" class="btn btn-secondary">
+        <span>Browse Opportunities</span>
+      </a>
+    </div>
+  </div>
+  {% endif %}
+
 </div>
-{% else %}
-<div class="card">
-  <div class="text-sm text-muted">No completed videos yet. Click <strong>1-Click Smoke Test</strong> in the top bar to render your first verified 1080×1920 Short right now!</div>
-</div>
-{% endif %}
 {% endblock %}
+

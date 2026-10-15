@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="discover-container" style="display: flex; flex-direction: column; gap: var(--space-md);">
+
+  <!-- Compact Header Bar (<= 60px height to ensure 3+ cards above the fold on 1366x768) -->
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); flex-wrap: wrap;">
+    <div>
+      <h1 style="font-family: var(--font-headline); font-size: var(--text-headline-xl); font-weight: 700; margin: 0; line-height: 1.1; letter-spacing: -0.02em;">
+        Discover
+      </h1>
+      <p style="margin: 2px 0 0; color: var(--text-secondary); font-size: var(--text-body-sm);">
+        Find viral creator stories and clipping campaigns worth turning into Shorts.
+      </p>
+    </div>
+
+    <!-- Actions: Refresh Recommendations & Manual Import -->
+    <div style="display: flex; align-items: center; gap: var(--space-sm);">
+      <button id="refresh-recommendations-btn" class="btn btn-primary btn-sm" onclick="triggerRefreshRecommendations()">
+        <span style="font-size: 14px;">🔄</span>
+        <span>Refresh Recommendations</span>
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="openManualCampaignModal()">
+        <span>+ Import Brief</span>
+      </button>
+      <span id="refresh-timestamp" class="badge badge-platform" style="font-size: 11px;">Updated just now</span>
+    </div>
+  </div>
+
+  <!-- Granular Streaming Refresh Progress Box (Hidden by default, shown during refresh) -->
+  <div id="refresh-progress-box" class="card hidden" style="padding: 12px 16px; background: var(--surface-container); border-color: var(--primary-container);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <span style="font-weight: 600; font-size: 12px; color: var(--primary-container);">Scanning Multi-Source Feeds & Opportunities</span>
+      <span id="refresh-progress-pct" style="font-family: var(--font-mono); font-size: 11px; color: var(--secondary);">0%</span>
+    </div>
+    <div style="display: flex; gap: 12px; font-size: 11px; color: var(--text-secondary); flex-wrap: wrap;">
+      <span id="step-creator">Scanning creator feeds <span class="step-icon">⏳</span></span>
+      <span id="step-news">Checking current news <span class="step-icon">⏳</span></span>
+      <span id="step-trends">Checking Google Trends <span class="step-icon">⏳</span></span>
+      <span id="step-campaigns">Indexing campaigns <span class="step-icon">⏳</span></span>
+      <span id="step-tech">Checking tech feeds <span class="step-icon">⏳</span></span>
+    </div>
+  </div>
+
+  <!-- Compact One-Line Filter & Sort Bar -->
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); border-bottom: 1px solid var(--border-subtle); padding-bottom: var(--space-sm); flex-wrap: wrap;">
+    <!-- Filter Tabs -->
+    <div class="filter-tabs" style="display: flex; gap: 4px; overflow-x: auto;">
+      <button class="tab-btn active" onclick="filterOpportunities('all', this)">For You</button>
+      <button class="tab-btn" onclick="filterOpportunities('whop_campaign', this)">Whop Campaigns</button>
+      <button class="tab-btn" onclick="filterOpportunities('creator_trend', this)">Creator Moments</button>
+      <button class="tab-btn" onclick="filterOpportunities('internet_trend', this)">Internet Viral</button>
+      <button class="tab-btn" onclick="filterOpportunities('tech_story', this)">Tech &amp; AI</button>
+      <button class="tab-btn" onclick="filterOpportunities('saved', this)">Saved</button>
+    </div>
+
+    <!-- Sort Dropdown -->
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary);">
+      <span>Sort by:</span>
+      <select id="sort-opportunities-select" style="background: var(--surface-container); color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 4px 8px; font-size: 12px;" onchange="sortOpportunities(this.value)">
+        <option value="opportunity_score">Highest Opportunity</option>
+        <option value="confidence">Source Confidence</option>
+        <option value="freshest">Freshest</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Opportunities Multi-Column Grid (Auto-Fill 320px, Responsive Across All Screens) -->
+  <div id="opportunities-grid" class="card-grid">
+    {% for opp in opportunities %}
+    <div class="opportunity-card" data-type="{{ opp.opportunity_type.value if opp.opportunity_type.value is defined else opp.opportunity_type }}" data-id="{{ opp.id }}">
+      
+      <!-- Card Media Frame (16:9 banner with badges) -->
+      <div class="opportunity-media">
+        <!-- Stock / Campaign plate image fallback -->
+        <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80" alt="{{ opp.title }}" loading="lazy">
+        
+        <!-- Type Pill Overlay (Top Left) -->
+        <div style="position: absolute; top: 10px; left: 10px; display: flex; gap: 6px;">
+          {% if opp.opportunity_type == 'whop_campaign' or (opp.opportunity_type.value is defined and opp.opportunity_type.value == 'whop_campaign') %}
+            <span class="badge badge-whop">
+              {% if opp.campaign and opp.campaign.is_demo %}WHOP CAMPAIGN (DEMO){% else %}WHOP CAMPAIGN{% endif %}
+            </span>
+          {% else %}
+            <span class="badge badge-opportunity">CREATOR MOMENT</span>
+          {% endif %}
+        </div>
+
+        <!-- Opportunity Score Pill (Top Right) -->
+        <div style="position: absolute; top: 10px; right: 10px;">
+          <span class="badge badge-confidence font-mono">⚡ {{ opp.opportunity_score }} OPP</span>
+        </div>
+
+        <!-- Bottom Scrim Bar -->
+        <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 6px 12px; background: linear-gradient(to top, rgba(10,14,22,0.95), transparent); display: flex; justify-content: space-between; font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary);">
+          <span>{{ opp.creator_or_brand }}</span>
+          <span>Conf {{ opp.source_confidence }}%</span>
+        </div>
+      </div>
+
+      <!-- Card Body -->
+      <div class="opportunity-body">
+        <h3 class="opportunity-title">{{ opp.title }}</h3>
+        
+        <!-- Campaign Reward Metadata or Trend Velocity -->
+        {% if opp.campaign %}
+        <div style="display: flex; align-items: center; justify-content: space-between; background: var(--surface-container); padding: 6px 10px; border-radius: var(--radius-sm); font-size: 12px; margin-top: 4px;">
+          <span style="font-weight: 700; color: #ff8533;">💰 {{ opp.campaign.cpm_rate }}</span>
+          <span style="color: var(--text-secondary); font-family: var(--font-mono); font-size: 11px;">{{ opp.campaign.budget }}</span>
+        </div>
+        <div style="display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap;">
+          {% for plat in opp.campaign.platforms %}
+          <span class="badge badge-platform">{{ plat }}</span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="opportunity-meta">
+          <span>🔥 High Discussion Velocity</span>
+          <span>·</span>
+          <span>Verified Sources Available</span>
+        </div>
+        {% endif %}
+
+        <!-- Why This Matters / Summary -->
+        <div class="opportunity-reasons">
+          {{ opp.summary }}
+        </div>
+      </div>
+
+      <!-- Card Footer Actions -->
+      <div class="opportunity-footer">
+        {% if opp.campaign %}
+        <button class="btn btn-sm btn-ghost" onclick="openCampaignBrief('{{ opp.id }}')">
+          <span>📋 View Brief</span>
+        </button>
+        {% else %}
+        <button class="btn btn-sm btn-ghost" onclick="saveOpportunity('{{ opp.id }}')">
+          <span>⭐ Save</span>
+        </button>
+        {% endif %}
+
+        <button class="btn btn-sm btn-primary" onclick="createShortFromOpportunity('{{ opp.id }}', '{{ opp.title | escape }}')">
+          <span>Create Short →</span>
+        </button>
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Empty State (If no opportunities match filters) -->
+  <div id="opportunities-empty-state" class="card hidden" style="text-align: center; padding: 48px var(--space-md); margin-top: 24px;">
+    <div style="font-size: 40px; margin-bottom: 12px;">🔍</div>
+    <h3 style="font-family: var(--font-headline); font-size: var(--text-headline-lg); margin-bottom: 6px;">No Opportunities Found in this Category</h3>
+    <p style="color: var(--text-secondary); max-width: 440px; margin: 0 auto 16px;">Try selecting another filter tab or click "Refresh Recommendations" to scan live creator feeds.</p>
+    <button class="btn btn-secondary btn-sm" onclick="filterOpportunities('all', document.querySelector('.tab-btn'))">Show All Opportunities</button>
+  </div>
+
+</div>
+
+<!-- Campaign Brief Modal -->
+<div id="campaign-brief-modal" class="modal-overlay hidden" onclick="closeCampaignBrief(event)">
+  <div class="modal-dialog" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="badge badge-whop">CAMPAIGN BRIEF</span>
+        <h3 id="brief-modal-title" style="font-family: var(--font-headline); font-size: var(--text-headline-md); margin: 0;">Campaign Title</h3>
+      </div>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeCampaignBrief()">✕</button>
+    </div>
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: var(--space-md);">
+      <div id="brief-meta-row" style="display: flex; justify-content: space-between; background: var(--surface-container); padding: 12px; border-radius: var(--radius-md);">
+        <div>
+          <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">CPM / Reward Rate</div>
+          <div id="brief-cpm" style="font-size: 16px; font-weight: 700; color: #ff8533;">$1.20 / 1K views</div>
+        </div>
+        <div>
+          <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Total Budget</div>
+          <div id="brief-budget" style="font-size: 16px; font-weight: 700; color: var(--text-primary);">$10,000 Pool</div>
+        </div>
+        <div>
+          <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Status</div>
+          <div id="brief-status" style="font-size: 13px; font-weight: 600; color: var(--secondary);">OPEN</div>
+        </div>
+      </div>
+
+      <div>
+        <h4 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--secondary); margin-bottom: 6px;">✓ Must Include Requirements</h4>
+        <ul id="brief-must-list" style="margin: 0; padding-left: 20px; font-size: 13px; color: var(--text-primary); display: flex; flex-direction: column; gap: 4px;"></ul>
+      </div>
+
+      <div>
+        <h4 style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--danger); margin-bottom: 6px;">✕ Do Not Include Restrictions</h4>
+        <ul id="brief-dont-list" style="margin: 0; padding-left: 20px; font-size: 13px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 4px;"></ul>
+      </div>
+
+      <div style="background: var(--surface-container-high); padding: 10px 14px; border-radius: var(--radius-sm); font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <span style="color: var(--text-muted);">Approved Asset Folder: </span>
+          <code id="brief-assets-dir" style="color: var(--primary-container);">assets/campaigns/</code>
+        </div>
+        <span class="badge badge-platform">Rights Safe</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeCampaignBrief()">Close</button>
+      <button id="brief-create-btn" class="btn btn-primary" onclick="proceedFromBrief()">Create Short from Brief →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manual Campaign Import Modal -->
+<div id="manual-campaign-modal" class="modal-overlay hidden" onclick="closeManualCampaignModal(event)">
+  <div class="modal-dialog" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 style="font-family: var(--font-headline); font-size: var(--text-headline-md); margin: 0;">Import Campaign Brief</h3>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeManualCampaignModal()">✕</button>
+    </div>
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: var(--space-md);">
+      <p style="font-size: 13px; color: var(--text-secondary); margin: 0;">Paste rules, requirements, and reward terms from any Whop campaign or creator brief.</p>
+      <div>
+        <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Campaign Title / Creator</label>
+        <input id="import-camp-title" type="text" placeholder="e.g. Kai Cenat Streamer Challenge Clips" style="width: 100%; background: var(--surface-container); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 8px 12px; color: var(--text-primary); font-size: 13px;">
+      </div>
+      <div>
+        <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Campaign Brief Text</label>
+        <textarea id="import-camp-text" rows="6" placeholder="Paste campaign text with Requirements and Restrictions..." style="width: 100%; background: var(--surface-container); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 8px 12px; color: var(--text-primary); font-size: 13px;"></textarea>
+      </div>
+      <div>
+        <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Approved Asset Local Folder (Optional)</label>
+        <input id="import-camp-folder" type="text" placeholder="e.g. C:\Users\admin\Downloads\creator_assets" style="width: 100%; background: var(--surface-container); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 8px 12px; color: var(--text-primary); font-size: 13px;">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeManualCampaignModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitManualCampaign()">Save &amp; Ingest Campaign</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

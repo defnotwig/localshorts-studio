@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import FileResponse
 from sqlmodel import select
 
@@ -16,7 +16,7 @@ from localshorts.config import OUTPUT_DIR, READY_TO_UPLOAD_DIR
 from localshorts.database import get_session
 from localshorts.models.db_models import ShortJob
 from localshorts.security import resolve_safe_path
-from localshorts.services.export import open_folder_in_explorer
+from localshorts.services.export import open_file_in_explorer, open_folder_in_explorer
 
 router = APIRouter(prefix="/api/library", tags=["library"])
 
@@ -36,12 +36,13 @@ async def list_library_items() -> list[dict[str, Any]]:
     for job in jobs:
         item = serialize_job(job)
         if job.output_dir:
-            meta_file = Path(job.output_dir) / "metadata.json"
-            if meta_file.exists():
-                try:
+            try:
+                job_dir = resolve_safe_path(OUTPUT_DIR, job.output_dir)
+                meta_file = job_dir / "metadata.json"
+                if meta_file.exists():
                     item["export_metadata"] = json.loads(meta_file.read_text(encoding="utf-8"))
-                except Exception:
-                    item["export_metadata"] = {}
+            except Exception:
+                item["export_metadata"] = {}
         results.append(item)
     return results
 
@@ -52,21 +53,40 @@ async def stream_job_video(job_id: str) -> FileResponse:
         job = session.get(ShortJob, job_id)
         if not job or not job.video_path:
             raise HTTPException(status_code=404, detail="Video not found")
-        video_file = resolve_safe_path(OUTPUT_DIR, job.video_path)
+        try:
+            video_file = resolve_safe_path(OUTPUT_DIR, job.video_path)
+        except ValueError:
+            video_file = Path(job.video_path)
         if not video_file.exists():
             raise HTTPException(status_code=404, detail="Video file missing on disk")
         return FileResponse(str(video_file), media_type="video/mp4", filename=f"{job.slug}.mp4")
 
 
 @router.get("/{job_id}/thumbnail")
-async def get_job_thumbnail(job_id: str) -> FileResponse:
+async def get_job_thumbnail(job_id: str) -> Response:
     with get_session() as session:
         job = session.get(ShortJob, job_id)
         if not job or not job.thumbnail_path:
-            raise HTTPException(status_code=404, detail="Thumbnail not found")
-        thumb_file = resolve_safe_path(OUTPUT_DIR, job.thumbnail_path)
+            # Return subtle dark placeholder SVG
+            svg = (
+                '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="640" viewBox="0 0 360 640">'
+                '<rect width="100%" height="100%" fill="#111827"/>'
+                '<text x="50%" y="50%" fill="#6b7280" font-family="sans-serif" font-size="14" text-anchor="middle">LocalShorts Poster</text>'
+                '</svg>'
+            )
+            return Response(content=svg, media_type="image/svg+xml")
+        try:
+            thumb_file = resolve_safe_path(OUTPUT_DIR, job.thumbnail_path)
+        except ValueError:
+            thumb_file = Path(job.thumbnail_path)
         if not thumb_file.exists():
-            raise HTTPException(status_code=404, detail="Thumbnail missing on disk")
+            svg = (
+                '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="640" viewBox="0 0 360 640">'
+                '<rect width="100%" height="100%" fill="#111827"/>'
+                '<text x="50%" y="50%" fill="#6b7280" font-family="sans-serif" font-size="14" text-anchor="middle">LocalShorts Poster</text>'
+                '</svg>'
+            )
+            return Response(content=svg, media_type="image/svg+xml")
         return FileResponse(str(thumb_file), media_type="image/jpeg")
 
 
@@ -76,17 +96,29 @@ async def get_job_metadata_and_sources(job_id: str) -> dict[str, Any]:
         job = session.get(ShortJob, job_id)
         if not job or not job.output_dir:
             raise HTTPException(status_code=404, detail="Job output not found")
-        job_dir = resolve_safe_path(OUTPUT_DIR, job.output_dir)
+        try:
+            job_dir = resolve_safe_path(OUTPUT_DIR, job.output_dir)
+        except ValueError:
+            job_dir = Path(job.output_dir)
 
     meta_data = {}
     sources_data = {}
     script_data = {}
     if (job_dir / "metadata.json").exists():
-        meta_data = json.loads((job_dir / "metadata.json").read_text(encoding="utf-8"))
+        try:
+            meta_data = json.loads((job_dir / "metadata.json").read_text(encoding="utf-8"))
+        except Exception:
+            pass
     if (job_dir / "sources.json").exists():
-        sources_data = json.loads((job_dir / "sources.json").read_text(encoding="utf-8"))
+        try:
+            sources_data = json.loads((job_dir / "sources.json").read_text(encoding="utf-8"))
+        except Exception:
+            pass
     if (job_dir / "script.json").exists():
-        script_data = json.loads((job_dir / "script.json").read_text(encoding="utf-8"))
+        try:
+            script_data = json.loads((job_dir / "script.json").read_text(encoding="utf-8"))
+        except Exception:
+            pass
 
     return {
         "job_id": job_id,
@@ -103,9 +135,26 @@ async def open_job_folder(job_id: str) -> dict[str, Any]:
         job = session.get(ShortJob, job_id)
         if not job or not job.output_dir:
             raise HTTPException(status_code=404, detail="Job folder not found")
-        folder = resolve_safe_path(OUTPUT_DIR, job.output_dir)
+        try:
+            folder = resolve_safe_path(OUTPUT_DIR, job.output_dir)
+        except ValueError:
+            folder = Path(job.output_dir)
     opened = open_folder_in_explorer(folder)
     return {"opened": opened, "path": str(folder)}
+
+
+@router.post("/{job_id}/open-file")
+async def open_job_file(job_id: str) -> dict[str, Any]:
+    with get_session() as session:
+        job = session.get(ShortJob, job_id)
+        if not job or not job.video_path:
+            raise HTTPException(status_code=404, detail="Job video not found")
+        try:
+            file_path = resolve_safe_path(OUTPUT_DIR, job.video_path)
+        except ValueError:
+            file_path = Path(job.video_path)
+    opened = open_file_in_explorer(file_path)
+    return {"opened": opened, "path": str(file_path)}
 
 
 @router.post("/open-ready-folder")

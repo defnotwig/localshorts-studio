@@ -1,328 +1,206 @@
 {% extends "base.html" %}
+
 {% block content %}
-<div class="page-header-row">
-  <div class="page-title-group">
-    <h1>Production Queue &amp; Whop Clipping Studio</h1>
-    <p>Sequential crash-recoverable state machine · 1 job at a time to protect 4 GB VRAM &amp; laptop thermals</p>
-  </div>
-  <div class="flex gap-2">
-    <button class="btn btn-secondary" onclick="window.location.reload()">🔄 Refresh</button>
-    <button class="btn btn-primary" onclick="generateDailyBatch(3)">+ Queue 3 Shorts</button>
-    <button class="btn btn-emerald" onclick="generateDailyBatch({{ settings.daily_target_shorts or 10 }})">🚀 Full Daily Batch ({{ settings.daily_target_shorts or 10 }})</button>
-  </div>
-</div>
+<div class="queue-container" style="display: flex; flex-direction: column; gap: var(--space-md);">
 
-<!-- View Switcher Bar -->
-<div class="view-switcher-bar">
-  <div class="flex items-center gap-3">
-    <span class="text-xs text-muted font-bold text-uppercase">Queue View:</span>
-    <div class="view-toggle-group">
-      <button id="view-grid-btn" class="view-btn active" onclick="toggleQueueView('grid')">
-        <span>🗂️</span> Whop 9:16 Cards
-      </button>
-      <button id="view-table-btn" class="view-btn" onclick="toggleQueueView('table')">
-        <span>📋</span> Production Table
-      </button>
+  <!-- Header Strip with View Switcher -->
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); flex-wrap: wrap;">
+    <div>
+      <h1 style="font-family: var(--font-headline); font-size: var(--text-headline-xl); font-weight: 700; margin: 0; line-height: 1.1; letter-spacing: -0.02em;">
+        Production Queue
+      </h1>
+      <p style="margin: 2px 0 0; color: var(--text-secondary); font-size: var(--text-body-sm);">
+        Sequential local rendering engine (Concurrency = 1). Manage active video generation and completed Shorts.
+      </p>
     </div>
-  </div>
-  <div class="flex items-center gap-2">
-    <span class="badge badge-purple">Total: {{ jobs | length }} Shorts</span>
-  </div>
-</div>
 
-<!-- 1. WHOP CLIPPING 9:16 CARD GRID VIEW (Default) -->
-<div id="queue-grid-view" class="whop-cards-grid">
-  {% for j in jobs %}
-  <div class="short-card" id="card-{{ j.id }}">
-    <!-- 9:16 Video / Poster Frame -->
-    <div class="short-card-preview" onclick="openShortPreview('{{ j.id }}', '{{ j.final_video_path }}', '{{ j.topic_title | escape }}')">
-      {% if j.state == 'READY' and j.final_video_path %}
-      <video preload="metadata" muted playsinline poster="/api/library/{{ j.id }}/thumbnail">
-        <source src="/api/library/{{ j.id }}/video" type="video/mp4">
-      </video>
-      <div class="short-card-play-btn">▶</div>
+    <!-- Right Controls: View Switcher (List Default), Batch Generate, Queue Control -->
+    <div style="display: flex; align-items: center; gap: var(--space-sm);">
+      <!-- Dual View Switcher (List Default) -->
+      <div style="background: var(--surface-container); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 2px; display: flex; gap: 2px;">
+        <button id="view-toggle-list" class="btn btn-xs btn-primary" onclick="setQueueView('list')">
+          <span>☰ Production List</span>
+        </button>
+        <button id="view-toggle-grid" class="btn btn-xs btn-ghost" onclick="setQueueView('grid')">
+          <span>▦ Visual Grid</span>
+        </button>
+      </div>
+
+      <button class="btn btn-secondary btn-sm" onclick="triggerBatchGenerate(3)">
+        <span>⚡ Generate Batch (3)</span>
+      </button>
+
+      {% if health.queue == 'paused' %}
+      <button class="btn btn-sm btn-destructive" onclick="resumeQueue()">Resume Queue</button>
       {% else %}
-      <div class="flex flex-col items-center justify-center p-4 text-center" style="height: 100%; width: 100%; background: linear-gradient(180deg, #0e1626 0%, #080c14 100%);">
-        <div style="font-size: 32px; margin-bottom: 8px;">🎬</div>
-        <div class="badge {% if j.state in ['FAILED', 'CANCELLED'] %}badge-danger{% elif j.state == 'DISCOVERED' %}badge-info{% else %}badge-warning{% endif %} mb-2">
-          {{ j.state }}
-        </div>
-        <div class="text-xs text-muted" style="padding: 0 10px;">{{ j.stage_message or 'Processing...' }}</div>
-      </div>
+      <button class="btn btn-sm btn-ghost" onclick="pauseQueue()">Pause Queue</button>
       {% endif %}
-
-      <!-- Top Overlay: Badges & Hook -->
-      <div class="short-card-overlay">
-        <div class="flex justify-between items-center">
-          <span class="badge {% if j.state == 'READY' %}badge-success{% elif j.state in ['FAILED', 'CANCELLED'] %}badge-danger{% else %}badge-warning{% endif %}">
-            {{ j.state }}
-          </span>
-          <span class="badge badge-purple font-bold">
-            {% if j.quality_score %}QC {{ j.quality_score }}/100{% else %}QC Pending{% endif %}
-          </span>
-        </div>
-
-        {% if j.hook or j.script_text %}
-        <div class="hook-badge">
-          "{{ (j.hook or j.script_text)[:110] }}..."
-        </div>
-        {% endif %}
-      </div>
-    </div>
-
-    <!-- Card Body -->
-    <div class="short-card-body">
-      <div class="short-card-title" title="{{ j.topic_title }}">
-        {{ j.topic_title }}
-      </div>
-
-      <div class="short-card-meta">
-        <span>⏱️ {{ j.duration_sec | round(1) }}s</span>
-        <span>🎨 {{ j.visual_preset }}</span>
-        <span>🎙️ {{ j.voice_id or 'Voice' }}</span>
-      </div>
-
-      {% if j.state != 'READY' %}
-      <div class="progress-bar mb-3">
-        <div class="progress-fill" style="width: {{ j.progress_pct }}%;"></div>
-      </div>
-      {% endif %}
-
-      <!-- Action Toolbar -->
-      <div class="short-card-actions">
-        <button class="btn btn-sm btn-emerald flex-1" onclick="openChatGPTAssetModal('{{ j.id }}')" title="Use your ChatGPT Plus subscription to search & import visuals">
-          <span>✨</span> ChatGPT Assets
-        </button>
-
-        {% if j.state == 'READY' and j.final_video_path %}
-        <button class="btn btn-sm btn-secondary" onclick="openShortPreview('{{ j.id }}', '{{ j.final_video_path }}', '{{ j.topic_title | escape }}')" title="Watch 9:16 Short">
-          👁️ Watch
-        </button>
-        {% endif %}
-
-        <div style="position: relative;" class="dropdown-container">
-          <button class="btn btn-sm btn-secondary" onclick="toggleDropdown('dropdown-{{ j.id }}')">⚡ Regen ▾</button>
-          <div id="dropdown-{{ j.id }}" class="dropdown-menu" style="display: none; position: absolute; right: 0; bottom: 100%; margin-bottom: 6px; background: var(--stitch-surface); border: 1px solid var(--stitch-border-strong); border-radius: var(--radius-md); box-shadow: 0 10px 30px rgba(0,0,0,0.6); z-index: 100; min-width: 140px; padding: 4px;">
-            <button class="dropdown-item" onclick="regenerateStage('{{ j.id }}', 'SCRIPT')">📝 Script</button>
-            <button class="dropdown-item" onclick="regenerateStage('{{ j.id }}', 'TTS')">🎙️ Voice</button>
-            <button class="dropdown-item" onclick="regenerateStage('{{ j.id }}', 'CAPTIONS')">💬 Captions</button>
-            <button class="dropdown-item" onclick="regenerateStage('{{ j.id }}', 'SCENES')">🎨 Visuals</button>
-            <button class="dropdown-item" onclick="regenerateStage('{{ j.id }}', 'RENDER')">🎬 Re-Render</button>
-          </div>
-        </div>
-
-        {% if j.state not in ['READY', 'CANCELLED', 'FAILED'] %}
-        <button class="btn btn-xs btn-danger" onclick="cancelJob('{{ j.id }}')" title="Cancel job">✕</button>
-        {% endif %}
-      </div>
     </div>
   </div>
-  {% else %}
-  <div class="card" style="grid-column: 1 / -1; padding: 40px; text-align: center;">
-    <div style="font-size: 38px; margin-bottom: 12px;">🎬</div>
-    <div class="card-title mb-2">No Shorts In Queue</div>
-    <p class="text-muted text-sm mb-4">Click <strong>+ Queue 3 Shorts</strong> or <strong>1-Click Smoke Test</strong> above to populate candidate stories.</p>
-    <button class="btn btn-primary" onclick="generateDailyBatch(3)">+ Queue 3 Candidate Shorts</button>
-  </div>
-  {% endfor %}
-</div>
 
-<!-- 2. PRODUCTION TABLE VIEW (Hidden by default, toggled via switcher) -->
-<div id="queue-table-view" class="card mb-4" style="display: none;">
-  <div class="table-wrap">
-    <table>
+  <!-- PRODUCTION LIST VIEW (DEFAULT VIEW) -->
+  <div id="queue-list-container" class="card" style="padding: 0; overflow-x: auto;">
+    <table class="queue-table">
       <thead>
         <tr>
-          <th>Short / ID</th>
-          <th>Hook &amp; Story Title</th>
-          <th>State &amp; Progress</th>
-          <th>Audio &amp; Preset</th>
-          <th>Quality QC</th>
-          <th>Actions</th>
+          <th style="width: 60px;">Thumb</th>
+          <th>Story / Video</th>
+          <th style="width: 180px;">Production Stage</th>
+          <th style="width: 100px;">Quality</th>
+          <th style="width: 90px;">Duration</th>
+          <th style="width: 110px;">Created</th>
+          <th style="width: 200px; text-align: right;">Actions</th>
         </tr>
       </thead>
       <tbody>
-        {% for j in jobs %}
-        <tr>
-          <td class="mono text-xs" style="width: 130px;">
-            <span class="font-bold">#{{ j.id }}</span><br>
-            <span class="text-muted">{{ j.slug[:18] }}...</span>
-          </td>
+        {% for job in jobs %}
+        <tr class="queue-row" id="queue-row-{{ job.id }}">
+          <!-- 9:16 Thumb -->
           <td>
-            <div class="font-bold text-sm">{{ j.topic_title }}</div>
-            {% if j.hook %}
-            <div class="text-xs text-muted mt-1">"{{ j.hook[:90] }}..."</div>
+            <div class="queue-thumb" onclick="location.href='/studio/{{ job.id }}'" style="cursor: pointer;">
+              <img src="/api/library/{{ job.id }}/thumbnail" alt="{{ job.topic_title }}" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=100&q=80'">
+            </div>
+          </td>
+
+          <!-- Story Details -->
+          <td>
+            <div style="font-weight: 700; font-size: 14px; color: var(--text-primary); cursor: pointer;" onclick="location.href='/studio/{{ job.id }}'">
+              {{ job.topic_title }}
+            </div>
+            <div style="font-size: 11px; color: var(--text-secondary); display: flex; gap: 8px; margin-top: 2px;">
+              <span>Preset: {{ job.visual_preset or 'Creator News' }}</span>
+              <span>·</span>
+              <span>Voice: {{ job.voice_id or 'Edge Neural' }}</span>
+            </div>
+          </td>
+
+          <!-- Human-Readable Stage Message -->
+          <td>
+            {% if job.state == 'READY' %}
+              <span class="badge stage-ready font-mono">Ready to upload</span>
+            {% elif job.state == 'RENDERING' %}
+              <span class="badge stage-active font-mono">Rendering ({{ job.progress_pct }}%)</span>
+            {% elif job.state == 'TTS' %}
+              <span class="badge stage-active font-mono">Recording voiceover</span>
+            {% elif job.state == 'MEDIA' %}
+              <span class="badge stage-active font-mono">Finding visuals</span>
+            {% elif job.state == 'CAPTIONS' %}
+              <span class="badge stage-active font-mono">Building captions</span>
+            {% elif job.state == 'SCRIPTING' %}
+              <span class="badge stage-active font-mono">Writing script</span>
+            {% elif job.state == 'NEEDS_REVIEW' %}
+              <span class="badge stage-review font-mono">Needs review</span>
+            {% elif job.state == 'FAILED' %}
+              <span class="badge stage-failed font-mono">Failed</span>
+            {% else %}
+              <span class="badge stage-active font-mono">{{ job.stage_message or job.state }}</span>
             {% endif %}
           </td>
-          <td style="min-width: 160px;">
-            <div class="flex justify-between items-center mb-1">
-              <span class="badge {% if j.state == 'READY' %}badge-success{% elif j.state in ['FAILED', 'CANCELLED'] %}badge-danger{% else %}badge-warning{% endif %}">
-                {{ j.state }}
-              </span>
-              <span class="mono text-xs">{{ j.progress_pct }}%</span>
-            </div>
-            <div class="progress-bar">
-              <div class="progress-fill" style="width: {{ j.progress_pct }}%;"></div>
-            </div>
-          </td>
-          <td class="text-xs">
-            <div>{{ j.voice_id or 'Christopher' }}</div>
-            <div class="text-muted">{{ j.visual_preset }} · {{ j.duration_sec | round(1) }}s</div>
-          </td>
-          <td class="mono text-xs">
-            <span class="badge badge-purple">QC {{ j.quality_score }}/100</span><br>
-            <span class="text-muted">Sim: {{ j.originality_similarity | round(2) }}</span>
-          </td>
+
+          <!-- Quality Score -->
           <td>
-            <div class="flex gap-2">
-              <button class="btn btn-xs btn-emerald" onclick="openChatGPTAssetModal('{{ j.id }}')">✨ Assets</button>
-              {% if j.state == 'READY' and j.final_video_path %}
-              <button class="btn btn-xs btn-secondary" onclick="openShortPreview('{{ j.id }}', '{{ j.final_video_path }}', '{{ j.topic_title | escape }}')">👁️</button>
+            {% if job.quality_score %}
+            <span class="badge badge-confidence font-mono">{{ job.quality_score }} / 100</span>
+            {% else %}
+            <span class="text-muted text-xs">--</span>
+            {% endif %}
+          </td>
+
+          <!-- Duration -->
+          <td style="font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);">
+            {{ '%0.1f' | format(job.duration_sec or 24) }}s
+          </td>
+
+          <!-- Created Date -->
+          <td style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">
+            {{ (job.created_at or '')[:10] }}
+          </td>
+
+          <!-- Clear Action Hierarchy: Primary (Open Studio), Secondary (Preview), Tertiary (•••) -->
+          <td style="text-align: right;">
+            <div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px;">
+              <a href="/studio/{{ job.id }}" class="btn btn-xs btn-primary">
+                <span>Open Studio</span>
+              </a>
+
+              {% if job.state == 'READY' %}
+              <button class="btn btn-xs btn-secondary" onclick="openVideoPreviewModal('{{ job.id }}', '{{ job.topic_title | escape }}')">
+                <span>▶ Preview</span>
+              </button>
               {% endif %}
-              <button class="btn btn-xs btn-secondary" onclick="regenerateStage('{{ j.id }}', 'RENDER')">Re-Render</button>
-              {% if j.state not in ['READY', 'CANCELLED', 'FAILED'] %}
-              <button class="btn btn-xs btn-danger" onclick="cancelJob('{{ j.id }}')">✕</button>
-              {% endif %}
+
+              <!-- Overflow Menu (•••) -->
+              <div style="position: relative; display: inline-block;">
+                <button class="btn btn-icon btn-xs btn-ghost" onclick="toggleRowMenu('{{ job.id }}', event)">•••</button>
+                <div id="row-menu-{{ job.id }}" class="telemetry-popover" style="right: 0; width: 180px;" onclick="event.stopPropagation()">
+                  <div class="cmd-item" onclick="regenerateStage('{{ job.id }}', 'voice')">🎙️ Regen Voice</div>
+                  <div class="cmd-item" onclick="regenerateStage('{{ job.id }}', 'captions')">💬 Regen Captions</div>
+                  <div class="cmd-item" onclick="regenerateStage('{{ job.id }}', 'render')">⚡ Re-Render MP4</div>
+                  <div class="cmd-item" onclick="openJobFolderSafely('{{ job.id }}')">📂 Open Folder</div>
+                  <div class="cmd-item" style="color: var(--danger);" onclick="cancelJob('{{ job.id }}')">✕ Delete Job</div>
+                </div>
+              </div>
             </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" style="text-align: center; padding: 48px; color: var(--text-muted);">
+            No jobs in queue. Go to <a href="/" style="color: var(--primary-container);">Discover</a> or click <a href="/create" style="color: var(--primary-container);">Create Short</a> to produce original videos.
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-</div>
 
-<!-- ==========================================================================
-     WHOP iPHONE-FRAME 9:16 VIDEO PLAYER MODAL
-     ========================================================================== -->
-<div id="phone-player-modal" class="phone-modal-backdrop" style="display: none;">
-  <div class="phone-mockup-wrapper">
-    <!-- Phone Bezel Frame -->
-    <div class="phone-frame">
-      <div class="phone-notch"></div>
-      <div class="phone-screen">
-        <video id="phone-modal-video" controls playsinline autoplay loop></video>
+  <!-- VISUAL GRID VIEW (OPTIONAL ALTERNATIVE) -->
+  <div id="queue-grid-container" class="card-grid hidden">
+    {% for job in jobs %}
+    <div class="opportunity-card" style="aspect-ratio: auto;">
+      <div style="position: relative; width: 100%; aspect-ratio: 9 / 16; max-height: 280px; background: #000; overflow: hidden;" onclick="location.href='/studio/{{ job.id }}'">
+        <img src="/api/library/{{ job.id }}/thumbnail" alt="{{ job.topic_title }}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.onerror=null; this.src='https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=400&q=80'">
+        <div style="position: absolute; top: 10px; right: 10px;">
+          <span class="badge stage-ready font-mono">{{ job.state }}</span>
+        </div>
+      </div>
+      <div class="opportunity-body">
+        <h4 style="font-size: 14px; font-weight: 700; margin: 0; color: var(--text-primary);">{{ job.topic_title }}</h4>
+        <div class="opportunity-meta">
+          <span>{{ '%0.1f' | format(job.duration_sec or 24) }}s</span>
+          <span>·</span>
+          <span>QC {{ job.quality_score or '--' }}</span>
+        </div>
+      </div>
+      <div class="opportunity-footer">
+        <a href="/studio/{{ job.id }}" class="btn btn-xs btn-primary" style="flex: 1;">Open Studio</a>
+        {% if job.state == 'READY' %}
+        <button class="btn btn-xs btn-secondary" onclick="openVideoPreviewModal('{{ job.id }}', '{{ job.topic_title | escape }}')">Preview</button>
+        {% endif %}
       </div>
     </div>
-
-    <!-- Companion Info Card -->
-    <div class="phone-companion-card">
-      <div class="flex justify-between items-center mb-3">
-        <span class="badge badge-success">READY FOR YOUTUBE SHORTS</span>
-        <button class="btn btn-sm btn-secondary" onclick="closeShortPreview()">✕ Close</button>
-      </div>
-
-      <h2 id="phone-modal-title" style="font-size: 18px; font-weight: 800; line-height: 1.35; margin-bottom: 12px; color: #fff;"></h2>
-
-      <div class="mb-4">
-        <div class="text-xs font-bold text-muted text-uppercase mb-1">Aspect Ratio &amp; Quality</div>
-        <div class="text-sm">1080×1920 (9:16 Vertical) · 30 FPS · H.264 + 48kHz AAC</div>
-      </div>
-
-      <div class="flex gap-2 mt-4" style="flex-wrap: wrap;">
-        <a id="phone-modal-download-btn" href="#" download class="btn btn-primary flex-1">⬇️ Download 1080×1920 MP4</a>
-        <button id="phone-modal-assets-btn" class="btn btn-emerald" onclick="">✨ Manage Assets</button>
-      </div>
-    </div>
+    {% endfor %}
   </div>
+
 </div>
 
-<!-- ==========================================================================
-     TABBED CHATGPT PLUS ASSET STUDIO MODAL
-     ========================================================================== -->
-<div id="chatgpt-modal" class="modal-overlay" style="display: none;">
-  <div class="asset-studio-dialog">
-    <!-- Header -->
-    <div class="asset-studio-header">
-      <div>
-        <div class="flex items-center gap-2">
-          <span style="font-size: 18px;">✨</span>
-          <div class="card-title" id="chatgpt-modal-title">ChatGPT Plus &amp; Visual Media Studio</div>
-        </div>
-        <div class="card-subtitle" id="chatgpt-modal-topic">Job Asset Pipeline · Zero Subscription / ChatGPT Plus Powered</div>
-      </div>
-      <button class="btn btn-sm btn-secondary" onclick="closeChatGPTModal()">✕</button>
+<!-- Video Preview Modal -->
+<div id="video-preview-modal" class="modal-overlay hidden" onclick="closeVideoPreviewModal(event)">
+  <div class="modal-dialog" style="max-width: 440px;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="preview-modal-title" style="font-family: var(--font-headline); font-size: var(--text-headline-md); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+        Video Preview
+      </h3>
+      <button class="btn btn-icon btn-sm btn-ghost" onclick="closeVideoPreviewModal()">✕</button>
     </div>
-
-    <!-- Tabs Header -->
-    <div class="asset-tabs-nav">
-      <button id="asset-tab-btn-prompt" class="asset-tab-btn active" onclick="switchAssetTab('prompt')">
-        <span>🤖</span> 1. ChatGPT Plus Assistant
-      </button>
-      <button id="asset-tab-btn-stock" class="asset-tab-btn" onclick="switchAssetTab('stock')">
-        <span>🔎</span> 2. Free Stock Search
-      </button>
-      <button id="asset-tab-btn-timeline" class="asset-tab-btn" onclick="switchAssetTab('timeline')">
-        <span>🎬</span> 3. Scene Visual Timeline (<span id="scene-count-badge">0</span>)
-      </button>
-    </div>
-
-    <!-- TAB 1: ChatGPT Plus Prompt & Paste Importer -->
-    <div id="asset-tab-prompt" class="asset-tab-content">
-      <div class="mb-4">
-        <div class="flex justify-between items-center mb-1">
-          <div class="font-bold text-sm">Step 1: Copy Tailored Prompt for ChatGPT Plus</div>
-          <span class="badge badge-info">ChatGPT-4o + Web Search &amp; DALL-E</span>
-        </div>
-        <div class="text-xs text-muted mb-2">
-          Paste this structured prompt into ChatGPT Plus. It uses ChatGPT's Web Search to find royalty-free image URLs or DALL-E 3 art for each scene timestamp.
-        </div>
-        <textarea id="chatgpt-prompt-text" class="form-textarea" rows="6" readonly style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px;"></textarea>
-        <div class="flex gap-2 mt-2">
-          <button class="btn btn-sm btn-primary" onclick="copyChatGPTAssetPrompt()">📋 Copy Prompt to Clipboard</button>
-          <a href="https://chatgpt.com" target="_blank" class="btn btn-sm btn-secondary">🌐 Open ChatGPT.com ↗</a>
-        </div>
-      </div>
-
-      <hr style="border: 0; border-top: 1px solid var(--stitch-border); margin: 20px 0;">
-
-      <div>
-        <div class="font-bold text-sm mb-1">Step 2: Paste ChatGPT Response or Direct Image URLs</div>
-        <div class="text-xs text-muted mb-2">
-          Paste the entire response from ChatGPT Plus or any image URLs below. LocalShorts Studio will auto-extract the URLs, download them, and format them into 1080×1920 vertical scenes with blurred background padding.
-        </div>
-        <textarea id="chatgpt-import-text" class="form-textarea" rows="4" placeholder="Paste direct image URLs or ChatGPT output here (e.g. Scene 1: https://... Scene 2: https://...)" oninput="updateDetectedUrlChips()"></textarea>
-
-        <div id="detected-urls-container" class="url-chip-list"></div>
-
-        <div class="flex gap-2 mt-3">
-          <button class="btn btn-emerald flex-1" onclick="importChatGPTAssets()">
-            ⬇️ Download, Verticalize &amp; Re-Render Short
-          </button>
-          <button class="btn btn-secondary" onclick="triggerAISearchDirect()">
-            🤖 Direct OpenAI API
-          </button>
-        </div>
+    <div class="modal-body" style="padding: 12px; display: flex; justify-content: center; background: #000;">
+      <div style="width: 100%; max-width: 320px; aspect-ratio: 9 / 16; background: #000; border-radius: var(--radius-md); overflow: hidden;">
+        <video id="preview-modal-video" controls autoplay style="width: 100%; height: 100%; object-fit: contain;"></video>
       </div>
     </div>
-
-    <!-- TAB 2: Free Stock Media Search -->
-    <div id="asset-tab-stock" class="asset-tab-content" style="display: none;">
-      <div class="mb-3">
-        <div class="font-bold text-sm mb-1">Search Free Stock Photos &amp; Clips</div>
-        <div class="text-xs text-muted mb-2">Query Pexels, Pixabay, and Wikimedia Commons for royalty-free portrait media.</div>
-        <div class="flex gap-2">
-          <input type="text" id="stock-search-query" class="form-input" placeholder="Search visual concepts (e.g. artificial intelligence, streamer, laptop)...">
-          <button class="btn btn-primary" onclick="searchFreeStock()">Search Media</button>
-        </div>
-      </div>
-
-      <div id="stock-search-results" class="scene-strip-grid">
-        <div class="text-sm text-muted" style="grid-column: 1 / -1; padding: 20px; text-align: center;">
-          Type a visual keyword above and click Search Media.
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB 3: Scene Visual Timeline -->
-    <div id="asset-tab-timeline" class="asset-tab-content" style="display: none;">
-      <div class="flex justify-between items-center mb-2">
-        <div class="font-bold text-sm">Visual Scene Plates Breakdown</div>
-        <span class="text-xs text-muted">Each scene automatically zooms/pans over 1080×1920 canvas</span>
-      </div>
-      <div id="scene-cards-container" class="scene-strip-grid">
-        <!-- Rendered dynamically by studio.js -->
-      </div>
+    <div class="modal-footer" style="justify-content: space-between;">
+      <button id="preview-open-folder-btn" class="btn btn-sm btn-ghost" onclick="openJobFolderSafely(currentPreviewJobId)">📂 Open Folder</button>
+      <button class="btn btn-sm btn-secondary" onclick="closeVideoPreviewModal()">Close</button>
     </div>
   </div>
 </div>

@@ -9,6 +9,7 @@ from typing import Iterator
 from sqlalchemy import event, text
 from sqlmodel import Session, SQLModel, create_engine, select
 
+import localshorts.models.db_models as _all_models  # noqa: F401
 from localshorts.config import ensure_directories, settings
 from localshorts.logging_config import get_logger
 from localshorts.models.db_models import (

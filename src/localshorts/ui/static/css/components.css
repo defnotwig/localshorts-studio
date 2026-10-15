@@ -1,0 +1,545 @@
+/**
+ * LocalShorts Studio — Obsidian Studio Component System
+ * Built on tokens.css extracted from Google Stitch Canvas Project: projects/5588442246823867498
+ */
+
+/* ==========================================================================
+   Buttons & Interactive Triggers
+   ========================================================================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: 8px 16px;
+  font-family: var(--font-body);
+  font-size: var(--text-label-md);
+  font-weight: 600;
+  line-height: 1.25;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn-primary {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  border-color: var(--primary-container);
+  box-shadow: var(--cyan-glow);
+}
+
+.btn-primary:hover {
+  background: var(--primary-hover);
+  color: #04121e;
+  border-color: var(--primary-hover);
+  box-shadow: 0 0 20px rgba(0, 242, 254, 0.5);
+}
+
+.btn-secondary {
+  background: var(--surface-container-high);
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
+}
+
+.btn-secondary:hover {
+  background: var(--surface-container-highest);
+  border-color: var(--border-strong);
+  color: #ffffff;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: transparent;
+}
+
+.btn-ghost:hover {
+  background: var(--surface-container);
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
+}
+
+.btn-destructive {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.btn-destructive:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #ef4444;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: var(--text-label-sm);
+  border-radius: var(--radius-sm);
+}
+
+.btn-lg {
+  padding: 12px 24px;
+  font-size: var(--text-body-lg);
+  border-radius: var(--radius-lg);
+}
+
+.btn-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-icon.btn-sm {
+  width: 28px;
+  height: 28px;
+}
+
+/* ==========================================================================
+   Badges, Pills & Chips
+   ========================================================================== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  border: 1px solid transparent;
+}
+
+.badge-pill {
+  border-radius: var(--radius-pill);
+}
+
+.badge-opportunity {
+  background: rgba(0, 242, 254, 0.12);
+  color: #38bdf8;
+  border-color: rgba(0, 242, 254, 0.3);
+}
+
+.badge-confidence {
+  background: rgba(78, 222, 163, 0.12);
+  color: #4edea3;
+  border-color: rgba(78, 222, 163, 0.3);
+}
+
+.badge-whop {
+  background: rgba(255, 98, 0, 0.15);
+  color: #ff8533;
+  border-color: rgba(255, 98, 0, 0.35);
+}
+
+.badge-platform {
+  background: var(--surface-container-high);
+  color: var(--text-secondary);
+  border-color: var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.badge-stage {
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-label-sm);
+  font-weight: 600;
+}
+
+.stage-ready {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.stage-active {
+  background: rgba(0, 242, 254, 0.15);
+  color: #38bdf8;
+  border-color: rgba(0, 242, 254, 0.4);
+}
+
+.stage-review {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.stage-failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+/* ==========================================================================
+   Cards & Surfaces
+   ========================================================================== */
+.card {
+  background: var(--surface-container-low);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: all var(--transition-normal);
+  box-shadow: var(--shadow-card);
+}
+
+.card:hover {
+  border-color: var(--border-glow);
+  box-shadow: var(--shadow-hover);
+}
+
+/* Opportunity & Campaign Cards */
+.opportunity-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-container-low);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: all var(--transition-normal);
+}
+
+.opportunity-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-glow);
+  box-shadow: var(--shadow-hover);
+}
+
+.opportunity-media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--surface-container-highest);
+  overflow: hidden;
+}
+
+.opportunity-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--transition-smooth);
+}
+
+.opportunity-card:hover .opportunity-media img {
+  transform: scale(1.03);
+}
+
+.opportunity-body {
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  flex: 1;
+}
+
+.opportunity-title {
+  font-family: var(--font-headline);
+  font-size: var(--text-headline-md);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.25;
+  margin: 0;
+}
+
+.opportunity-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-label-sm);
+  margin-top: 4px;
+}
+
+.opportunity-reasons {
+  background: var(--surface-container);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm);
+  font-size: var(--text-body-sm);
+  color: var(--text-secondary);
+  border-left: 2px solid var(--primary-container);
+  margin-top: var(--space-xs);
+}
+
+.opportunity-footer {
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  border-top: 1px solid var(--border-subtle);
+  margin-top: auto;
+}
+
+/* ==========================================================================
+   Production Queue — Default List Rows & Table
+   ========================================================================== */
+.queue-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--font-body);
+}
+
+.queue-table th {
+  padding: 10px 16px;
+  background: var(--surface-container-lowest);
+  color: var(--text-muted);
+  font-size: var(--text-label-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.queue-row {
+  background: var(--surface-container-low);
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background var(--transition-fast);
+}
+
+.queue-row:hover {
+  background: var(--surface-container);
+}
+
+.queue-row td {
+  padding: 12px 16px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.queue-thumb {
+  width: 44px;
+  height: 78px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-container-highest);
+  position: relative;
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle);
+}
+
+.queue-thumb img,
+.queue-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ==========================================================================
+   Story Studio 3-Panel Layout Components
+   ========================================================================== */
+.studio-workspace {
+  display: grid;
+  grid-template-columns: 320px 1fr 360px;
+  gap: var(--space-md);
+  height: calc(100vh - var(--topbar-height) - 32px);
+  overflow: hidden;
+}
+
+.studio-panel {
+  background: var(--surface-container-low);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.studio-panel-header {
+  padding: var(--space-md);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-container);
+}
+
+.studio-panel-body {
+  padding: var(--space-md);
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Left Panel: Beats & Scenes */
+.scene-beat-item {
+  display: flex;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: var(--surface-container);
+  cursor: pointer;
+  margin-bottom: var(--space-xs);
+  transition: all var(--transition-fast);
+}
+
+.scene-beat-item:hover {
+  border-color: var(--border-glow);
+  background: var(--surface-container-high);
+}
+
+.scene-beat-item.active {
+  border-color: var(--primary-container);
+  background: var(--surface-container-high);
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.15);
+}
+
+/* Center Panel: 9:16 Video Player */
+.player-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-container-lowest);
+  height: 100%;
+  position: relative;
+  padding: var(--space-md);
+}
+
+.video-frame-916 {
+  width: 100%;
+  max-width: 360px;
+  aspect-ratio: 9 / 16;
+  background: #000;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--border-subtle);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-frame-916 video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.player-transport-bar {
+  margin-top: var(--space-md);
+  width: 100%;
+  max-width: 480px;
+  background: var(--surface-container-low);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-sm) var(--space-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* Right Panel: Contextual Scene Inspector */
+.confidence-card {
+  background: var(--surface-container);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.confidence-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--text-body-sm);
+}
+
+.confidence-label {
+  color: var(--text-secondary);
+}
+
+.confidence-value {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ==========================================================================
+   Modals, Dialogs & Command Palette
+   ========================================================================== */
+.hidden {
+  display: none !important;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 12, 20, 0.85);
+  backdrop-filter: blur(12px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-md);
+  animation: fadeIn 150ms ease-out;
+}
+
+.modal-dialog {
+  background: var(--surface-container-low);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-modal);
+  width: 100%;
+  max-width: 640px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: scaleUp 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-header {
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-body {
+  padding: var(--space-lg);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-footer {
+  padding: var(--space-md) var(--space-lg);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleUp {
+  from { transform: scale(0.96); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}

@@ -1,26 +1,30 @@
-/* LocalShorts Studio — Google Stitch & Whop Clipping Inspired Modern Creator Theme */
+/* LocalShorts Studio — Google Stitch Obsidian Studio Design System */
+@import "tokens.css";
+@import "layout.css";
+@import "components.css";
+
 :root {
-  --stitch-obsidian: #080c14;
-  --stitch-surface: #0e1626;
-  --stitch-card: #131e33;
-  --stitch-card-hover: #192742;
-  --stitch-elevated: #1e2e4d;
-  --stitch-border: #1e2b42;
-  --stitch-border-strong: #2a3b5c;
-  --stitch-border-glow: rgba(56, 189, 248, 0.3);
+  --stitch-obsidian: var(--surface-base);
+  --stitch-surface: var(--surface-container-low);
+  --stitch-card: var(--surface-container);
+  --stitch-card-hover: var(--surface-container-high);
+  --stitch-elevated: var(--surface-container-highest);
+  --stitch-border: var(--border-subtle);
+  --stitch-border-strong: var(--border-strong);
+  --stitch-border-glow: var(--border-glow);
   
-  --stitch-cyan: #38bdf8;
-  --stitch-cyan-glow: rgba(56, 189, 248, 0.18);
-  --stitch-emerald: #10b981;
-  --stitch-emerald-glow: rgba(16, 185, 129, 0.18);
+  --stitch-cyan: var(--primary-container);
+  --stitch-cyan-glow: var(--cyan-glow);
+  --stitch-emerald: var(--secondary);
+  --stitch-emerald-glow: var(--emerald-glow);
   --stitch-purple: #8b5cf6;
   --stitch-purple-glow: rgba(139, 92, 246, 0.18);
   --stitch-gold: #facc15;
-  --stitch-red: #ef4444;
+  --stitch-red: var(--danger);
 
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #8496b0;
+  --text-primary: var(--text-primary);
+  --text-secondary: var(--text-secondary);
+  --text-muted: var(--text-muted);
 
   --radius-xs: 4px;
   --radius-sm: 8px;
