@@ -1,157 +1,401 @@
 # LocalShorts Studio (`v0.1.0`)
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows" />
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/Hardware-NVENC%20%2B%20CPU%20Fallback-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="NVENC" />
+  <img src="https://img.shields.io/badge/LLM-Ollama%20%28Qwen3%20%2F%20Gemma3%29-FF6B6B?style=for-the-badge" alt="Ollama" />
+  <img src="https://img.shields.io/badge/TTS-Free%20Edge--TTS%20%2B%20Kokoro-00C7B7?style=for-the-badge" alt="TTS" />
+  <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License" />
+</p>
+
 > **Free Local AI Shorts Factory**  
-> *Local-First, Zero-Subscription YouTube Shorts Production on Windows*
+> *A local-first, zero-subscription desktop production engine for researching viral creator moments and generating ready-to-upload 1080×1920 YouTube Shorts automatically on consumer Windows laptops.*
 
 ---
 
-## 🚀 Overview
+## 📑 Table of Contents
 
-**LocalShorts Studio** is a completely local, zero-subscription desktop application designed to research trending internet & creator stories and produce original `1080×1920` 30fps vertical YouTube Shorts automatically — capable of preparing up to **10 candidate Shorts/day** (~300 candidate Shorts/month) using free and open local software.
-
-### 💰 Zero Mandatory Subscriptions
-Runs entirely on your computer with **no paid APIs, no recurring cloud costs, and no third-party rendering fees**:
-- ❌ No OpenAI / Claude / paid Gemini API required
-- ❌ No ElevenLabs / paid TTS required
-- ❌ No Runway / paid video generation SaaS required
-- ❌ No CapCut Pro / Adobe Premiere subscriptions required
-- ❌ No Revid / Virlo / cloud automation SaaS required
-- ✅ **The only ongoing costs are electricity, internet, and disk space!**
-
----
-
-## 💻 Target Hardware & Resource Profiles
-
-Optimized specifically for laptops with **16 GB RAM and 4 GB VRAM** (such as the Acer Predator Helios 300 with NVIDIA RTX 3050 Ti Laptop GPU / RTX 4050 Laptop GPU):
-
-| Preset | Target Hardware | LLM Model | Context | Concurrency | Video Encoder | TTS Engine |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **LIGHTWEIGHT** | $\le 8\text{ GB}$ RAM, no NVIDIA GPU | `qwen2.5:1.5b` | 2048 | 1 | CPU `libx264` | Windows SAPI / DSP |
-| **BALANCED** *(Default)* | **16 GB RAM, 4 GB VRAM** | **`qwen3:4b`** | **4096** | **1** | **`h264_nvenc` (CPU fallback)** | **Kokoro ONNX / SAPI** |
-| **PERFORMANCE** | $\ge 32\text{ GB}$ RAM, $\ge 8\text{ GB}$ VRAM | `qwen3:4b` / larger | 8192 | 1 | `h264_nvenc` | Kokoro ONNX |
-
-### 🛡️ Thermal & Laptop Safety
-- **< 80°C**: Normal operation.
-- **80°C – 85°C**: Automatic 10-second thermal cooldown inserted between queue jobs.
-- **> 85°C**: GPU queue paused automatically until GPU cools below 80°C.
-- **Battery Guard**: Shows banner `Running on battery — batch generation paused by default.` with 1-click user override.
-- **VRAM Unload**: LLM model is unloaded (`keep_alive: 0`) before FFmpeg encoding starts so the 4 GB VRAM is never contested.
+1. [System Overview & Architecture](#-system-overview--architecture)
+2. [Zero Mandatory Subscriptions](#-zero-mandatory-subscriptions)
+3. [Key Features & Capabilities](#-key-features--capabilities)
+   - [Google Stitch Dark Glassmorphic Interface](#1-google-stitch-dark-glassmorphic-interface)
+   - [Whop Clipping 9:16 Card Grid & iPhone Player](#2-whop-clipping-916-card-grid--iphone-player)
+   - [ChatGPT Plus Visual Asset Studio](#3-chatgpt-plus-visual-asset-studio)
+   - [Free Online Neural Voiceovers (Edge-TTS)](#4-free-online-neural-voiceovers-edge-tts)
+   - [Local LLM Scripting & Originality Gate](#5-local-llm-scripting--originality-gate)
+   - [FFmpeg NVENC 1080×1920 Kinetic Pipeline](#6-ffmpeg-nvenc-10801920-kinetic-pipeline)
+4. [Hardware Profiles & Safety Guardrails](#-hardware-profiles--safety-guardrails)
+5. [Quickstart Guide](#-quickstart-guide)
+   - [Prerequisites](#prerequisites)
+   - [One-Click Launch](#one-click-launch)
+   - [Running Diagnostics](#running-diagnostics)
+6. [Core Workflows](#-core-workflows)
+   - [Mode A: 1-Click Smoke Test](#mode-a-1-click-smoke-test)
+   - [Mode B: Trend Discovery & Daily Batch Production](#mode-b-trend-discovery--daily-batch-production)
+   - [Mode C: Custom Short Creation](#mode-c-custom-short-creation)
+   - [Per-Stage Regeneration](#per-stage-regeneration)
+7. [ChatGPT Plus Asset Hub Workflow](#-chatgpt-plus-asset-hub-workflow)
+8. [Project Structure](#-project-structure)
+9. [REST API Reference](#-rest-api-reference)
+10. [Automated Testing & Verification](#-automated-testing--verification)
+11. [Troubleshooting & FAQ](#-troubleshooting--faq)
+12. [License & Attributions](#-license--attributions)
 
 ---
 
-## ⚙️ How to Use It
+## 🏛 System Overview & Architecture
 
-### 1. One-Click Launch
-1. Open PowerShell or Command Prompt in the project folder.
-2. Double-click or run:
-   ```cmd
-   START_LOCAL_SHORTS.bat
+**LocalShorts Studio** is designed to produce up to **10 candidate Shorts/day** (~300 candidate Shorts/month) directly on personal hardware without recurring cloud fees. The entire pipeline operates through a deterministic, sequential worker queue that safeguards GPU VRAM and thermal margins on laptops.
+
+```mermaid
+flowchart TD
+    subgraph Discovery ["1. TREND DISCOVERY & CONFIDENCE"]
+        RSS["Public Feeds & YouTube RSS"] --> Normalizer["Text Normalizer & Dedup"]
+        Normalizer --> Scoring["Velocity & Missing Signal Scoring"]
+        Scoring --> Evidence["Evidence Bundle & Confidence (0-100)"]
+    end
+
+    subgraph Generation ["2. SCRIPTING & SYNTHESIS"]
+        Evidence --> LLM["Local Ollama (Qwen3 / Gemma3)"]
+        LLM --> ScriptValidation["55-80 Word Window & Banned Hook Filter"]
+        ScriptValidation --> OriginalityGate{"Originality Gate (<= 0.78)"}
+        OriginalityGate -->|Fail| LLM
+        OriginalityGate -->|Pass| AudioEngine["Audio Pipeline: Edge-TTS / Kokoro ONNX"]
+        AudioEngine --> AudioMixer["CC0 Procedural SFX & Ducking (-14 LUFS)"]
+    end
+
+    subgraph Assets ["3. VISUAL ASSET HUB"]
+        ScriptValidation --> AssetHub["ChatGPT Plus Hub & Stock Search"]
+        AssetHub --> AutoPad["1080x1920 Blur-Padded Formatting"]
+        AutoPad --> ScenePlan["Scene Plan & Kinetic Alignment"]
+    end
+
+    subgraph Rendering ["4. COMPOSITION & QUALITY QC"]
+        AudioMixer --> FFmpeg["FFmpeg Render (NVENC / CPU Fallback)"]
+        ScenePlan --> FFmpeg
+        FFmpeg --> QC{"Technical & Content QC"}
+        QC -->|Score >= 75| Output["output/ready-to-upload/*.mp4"]
+        QC -->|Degraded| Review["Queue Needs Review"]
+    end
+```
+
+---
+
+## 💰 Zero Mandatory Subscriptions
+
+LocalShorts Studio replaces expensive SaaS stacks with free local and open tools:
+
+| SaaS Service | Typical Monthly Cost | LocalShorts Studio Replacement | Cost in Studio |
+| :--- | :--- | :--- | :--- |
+| **ElevenLabs / Paid TTS** | $22 – $99 / mo | **Free Edge-TTS** (8 Studio Neural Voices) + **Kokoro ONNX** | **$0.00 / Free** |
+| **OpenAI / Claude API** | $20 – $100 / mo | **Local Ollama** (`qwen3:4b`, `gemma3:4b`) | **$0.00 / Free** |
+| **Revid / Virlo / CapCut Pro**| $30 – $60 / mo | **FFmpeg NVENC 1080×1920 Kinetic Engine** | **$0.00 / Free** |
+| **Runway / Video Gen** | $35 – $95 / mo | **Procedural Motion Plates + ChatGPT Plus Asset Hub** | **$0.00 / Free** |
+| **Paid Trend Scrapers** | $49 / mo | **Free Public RSS + Google Trends + YouTube Feeds** | **$0.00 / Free** |
+| **Total Monthly Spend** | **~$150 – $400 / mo** | **Local Hardware + Electricity + Internet** | **$0.00 / mo** |
+
+---
+
+## ✨ Key Features & Capabilities
+
+### 1. Google Stitch Dark Glassmorphic Interface
+Inspired by the **Google Stitch** (`stitch.withgoogle.com`) design system:
+- **Obsidian Dark Canvas**: Deep `#080c14` background with translucent glass panels (`backdrop-filter: blur(16px)`).
+- **Subtle Neon Glows**: Cyan (`#38bdf8`) primary accents and Emerald (`#10b981`) success indicators.
+- **Live Telemetry Bar**: Real-time hardware telemetry display showing GPU temperature, thermal state, battery status, free disk space, and queue metrics.
+
+### 2. Whop Clipping 9:16 Card Grid & iPhone Player
+Inspired by creator clipping platforms like **Whop Clipping**, **Opus Clip**, and **SendShort**:
+- **9:16 Vertical Short Cards**: Candidate Shorts are rendered as true vertical cards with thumbnail plate previews.
+- **Hook Inspector**: The critical first 3-second hook is prominently highlighted in gold quotes on every card.
+- **Quality Score Pill**: 0–100 score badge reflecting Hook strength, Clarity, Pacing, Originality, and Visual Diversity.
+- **Dual View Switcher**: 1-click toggle between the **Whop 9:16 Card Grid** and the **Production Table** with automatic `localStorage` preference memory.
+- **Interactive iPhone Preview Modal**: Floating 9:16 mobile frame with interactive video controls to inspect caption synchronization, audio levels, and visual pacing before publishing.
+
+### 3. ChatGPT Plus Visual Asset Studio
+Allows creators to leverage their existing personal ChatGPT Plus subscription (Web Search & DALL-E 3) without paying for third-party media APIs:
+- **1-Click Prompt Generation**: Creates tailored prompts with exact scene timestamps, spoken lines, and visual search parameters.
+- **Live URL Chip Parser**: Paste ChatGPT output; URLs are detected and mapped to scene tags (`✓ Scene 1`, `✓ Scene 2`).
+- **Automatic 1080×1920 Re-composition**: Automatically transforms landscape/horizontal images into vertical plates using PIL with aesthetic Gaussian-blurred mirrored backdrops.
+- **Free Stock Media Integration**: Built-in direct queries to Wikimedia Commons (CC-BY/Public Domain), Pexels, and Pixabay with attribution tracking.
+- **Instant Re-render**: Re-composites scenes and triggers fast video re-rendering in under 10 seconds.
+
+### 4. Free Online Neural Voiceovers (Edge-TTS)
+- **8 Studio Voices**: Access high-fidelity Microsoft Edge Neural voices without API keys or subscriptions:
+  - `en-US-ChristopherNeural` (Deep, authoritative documentary default)
+  - `en-US-GuyNeural` (Punchy creator & tech explainer)
+  - `en-US-JennyNeural` (Friendly conversational)
+  - `en-US-AriaNeural` (Expressive narrative)
+  - `en-US-EricNeural` (Casual explainer)
+  - `en-GB-RyanNeural` (British documentary)
+  - `en-GB-SoniaNeural` (British journalistic)
+  - `en-AU-WilliamNeural` (Australian narrator)
+- **Dynamic Speech Rate**: Configurable speed multiplier (default `1.05x`) for optimal retention.
+- **4-Tier Fallback Audio Chain**: Edge-TTS -> Kokoro ONNX (82M) -> Windows SAPI / System.Speech -> Procedural DSP.
+- **Kinetic Audio Mixer**: 5 CC0 procedural sound effects synthesized via NumPy (`impact.wav`, `whoosh.wav`, `pop.wav`, `click.wav`, `riser.wav`), audio ducking, and `-14 LUFS` loudness normalization.
+
+### 5. Local LLM Scripting & Originality Gate
+- **Ollama Engine**: Seamlessly communicates with local Ollama instances running `qwen3:4b`, `gemma3:4b`, or `qwen2.5:1.5b`.
+- **Strict 55–80 Word Bounds**: Guarantees videos fit within the optimal 22–32 second retention window.
+- **Banned Intro Filter**: Automatically strips generic greetings ("Hey guys", "Welcome back", "In this video").
+- **3-Way Originality Verification**: Measures script overlap against source text using:
+  1. RapidFuzz Token Sort / Levenshtein
+  2. 3-Gram Jaccard overlap
+  3. Scikit-learn TF-IDF Cosine Similarity
+  *Scripts with $> 0.78$ similarity are automatically rejected and regenerated.*
+
+### 6. FFmpeg NVENC 1080×1920 Kinetic Pipeline
+- **Hardware NVENC**: Uses `h264_nvenc` with automatic CPU `libx264` fallback.
+- **Kinetic Typography**: Word-level ASS/SRT subtitles with highlighted keywords (Yellow, Cyan, Emerald), text outlines, and drop shadows.
+- **Visual Styles**:
+  - `Creator News`
+  - `Tech Explainer`
+  - `Breaking Internet`
+  - `Challenge`
+  - `Minimal Documentary`
+  - `High Energy`
+- **Technical QC Gate**: Verifies MP4 container integrity, H.264 stream, AAC 48kHz audio, non-blank frames, audio energy presence, and caption synchronization.
+
+---
+
+## 💻 Hardware Profiles & Safety Guardrails
+
+LocalShorts Studio dynamically inspects your system on startup and applies resource profiles tailored for laptops:
+
+| Profile | System Requirements | Concurrency | Context | Encoder | TTS Engine |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **LIGHTWEIGHT** | $\le 8\text{ GB}$ RAM, no NVIDIA GPU | 1 | 2048 | CPU `libx264` | Windows SAPI / DSP |
+| **BALANCED** *(Default)* | **16 GB RAM, 4 GB VRAM (RTX 3050 Ti)** | **1** | **4096** | **`h264_nvenc` (CPU fallback)** | **Edge-TTS / Kokoro** |
+| **PERFORMANCE** | $\ge 32\text{ GB}$ RAM, $\ge 8\text{ GB}$ VRAM | 1 | 8192 | `h264_nvenc` | Edge-TTS / Kokoro |
+
+### 🛡 Laptop Protection Systems
+1. **Thermal Guard**:
+   - `< 80°C`: Normal operation.
+   - `80°C – 85°C`: Inserts an automatic 10-second thermal rest between queue jobs.
+   - `> 85°C`: Automatically pauses the queue until GPU temperature drops below 80°C.
+2. **Battery Guard**:
+   - When running on battery power, batch production is automatically paused to prevent sudden battery drain and thermal throttling. Can be overridden with 1 click in the UI.
+3. **VRAM Collision Prevention**:
+   - The LLM is explicitly unloaded from Ollama (`keep_alive: 0`) before FFmpeg GPU encoding starts. The 4 GB VRAM is never contested simultaneously by inference and rendering.
+
+---
+
+## 🚀 Quickstart Guide
+
+### Prerequisites
+1. **Windows 10 / 11 x64**
+2. **Python 3.11** installed and on `PATH`
+3. **Ollama** installed and running (`ollama serve`)
+   ```powershell
+   ollama pull qwen3:4b
    ```
-3. The launcher will automatically bootstrap the isolated Python 3.11 virtual environment (`.venv`), verify FFmpeg & audio assets, launch the local server at `http://127.0.0.1:8765`, and open your default web browser.
+4. **NVIDIA Driver** (optional, for NVENC hardware acceleration)
 
-### 2. Verify Readiness with Diagnostics
-Before rendering your first video, run the 15-point system diagnostics:
+### One-Click Launch
+In the repository root, double-click or run:
+```cmd
+START_LOCAL_SHORTS.bat
+```
+*The launcher will automatically bootstrap the isolated Python virtual environment (`.venv`), install dependencies, synthesize sound effects, start the local server on `http://127.0.0.1:8765`, and open your default browser.*
+
+### Running Diagnostics
+To verify your environment (FFmpeg, NVENC, Ollama, TTS, and rendering), run:
 ```cmd
 DIAGNOSTICS.bat
 ```
-Checks:
-- Python 3.11 virtual environment
-- Portable FFmpeg & ffprobe binaries
-- Hardware NVENC probe with CPU fallback
-- Local Ollama status & model readiness
-- Kokoro ONNX / Windows SAPI local TTS
-- SQLite WAL mode database
-- 5 CC0 procedural WAV sound effects
-- OFL kinetic caption fonts
-- Real 4.2-second `1080×1920` diagnostic render test
+Checks performed:
+- [x] Python 3.11 virtual environment & dependencies
+- [x] FFmpeg and ffprobe binary presence
+- [x] NVENC hardware encoding capabilities with CPU fallback
+- [x] Ollama API reachability & recommended model
+- [x] Edge-TTS & Kokoro audio synthesizer
+- [x] SQLite database in WAL mode
+- [x] CC0 sound effects & fonts
+- [x] Test render of a real 4.2-second 1080×1920 video with QC verification
 
-### 3. Producing Your First Short (3 Modes)
+---
 
-#### Mode A: 1-Click Installation Smoke Test
-In the top bar, click **1-Click Smoke Test** (or run `POST /api/jobs/sample`). In ~20 seconds, the engine generates an original, verified 18-second Short explaining *Why Local AI Runs Without Sending Prompts to the Cloud*, complete with voiceover, kinetic captions, punch-zooms, and CC0 sound effects.
+## 🎬 Core Workflows
 
-#### Mode B: Automated Daily Batch Production
-1. Navigate to the **Dashboard** (`/dashboard`).
-2. Click **Scan Live Trends** to aggregate stories from Google Trends, Google News, YouTube RSS, Reddit, and Hacker News.
-3. Click **Generate 3 Candidate Shorts Now** or **Run Full Daily Batch (10)**.
-4. The sequential worker processes jobs one at a time, moving passing videos to `output/ready-to-upload/`.
+### Mode A: 1-Click Smoke Test
+Click the **"⚡ 1-Click Smoke Test"** button in the top navigation bar. In ~20 seconds, the engine generates an original, verified Short:
+- Topic: *Why Local AI Runs Without Sending Prompts to the Cloud*
+- Includes narration, kinetic captions, zoom-pan effects, and sound effects.
 
-#### Mode C: Custom / Manual Topic Creation
-1. Navigate to **Create Short** (`/create`).
-2. Enter your custom headline (e.g. *How Modern Creators Engineer High-Retention 30-Second Stories*).
-3. Select visual style (`Creator News`, `Tech Explainer`, `Breaking Internet`, `Challenge`, `Minimal Documentary`, `High Energy`) and caption preset (`Bold`, `Clean`, `Minimal`, `High Energy`).
-4. Click **Queue & Render Short**.
+### Mode B: Trend Discovery & Daily Batch Production
+1. Open the **Dashboard** (`http://127.0.0.1:8765/dashboard`).
+2. Click **"Scan Live Trends"** to scrape public RSS, Google News, and YouTube creator feeds.
+3. Review ranked candidate topics with their **Source Confidence Score** (0–100).
+4. Click **"Generate Selected"** or **"Run Full Daily Batch (10)"**.
+5. The queue processes jobs sequentially. Approved videos are moved to `output/ready-to-upload/`.
 
-### 4. Per-Stage Regeneration
-Did you love the script but want a different voice, caption style, or visual theme? You do **not** have to re-run the entire pipeline! In the **Queue** (`/queue`), click:
-- **Regen Script**: Re-writes 55–80 word script with originality check.
-- **Regen Voice**: Re-synthesizes audio with another voice ID.
-- **Regen Captions**: Re-styles kinetic subtitle cards without re-recording audio.
-- **Regen Visuals**: Re-composites procedural visual plates.
+### Mode C: Custom Short Creation
+1. Go to **Create Short** (`http://127.0.0.1:8765/create`).
+2. Enter your headline or topic (e.g., *How MrBeast Structures the First 5 Seconds of Every Video*).
+3. Select your visual preset (`Creator News`, `Tech Explainer`, etc.) and caption preset (`Bold`, `Clean`, etc.).
+4. Choose your voice (e.g., `en-US-ChristopherNeural`).
+5. Click **"Queue & Render Short"**.
+
+### Per-Stage Regeneration
+If you like a script but want a different voice, caption style, or visuals, you don't need to re-run the entire pipeline. In the **Queue** (`/queue`), click:
+- **Regen Script**: Rewrites the script with a fresh angle.
+- **Regen Voice**: Re-records audio with another voice.
+- **Regen Captions**: Re-styles kinetic subtitles without re-generating audio.
+- **Regen Visuals**: Re-composites visual background plates.
 - **Re-Render**: Fast re-mux and re-encode to MP4.
 
 ---
 
-## 📁 Output Artifacts (`output/`)
+## 🎨 ChatGPT Plus Asset Hub Workflow
 
-Every approved Short produces a self-contained folder under `output/YYYY-MM-DD/{slug}/`:
 ```
-output/
-├── 2026-10-13/
-│   └── why-local-ai-can-run-without-sending-your-prompt-job366/
-│       ├── video.mp4               # Final 1080x1920 30fps vertical Short
-│       ├── thumbnail.jpg           # Extracted 1080x1920 cover image
-│       ├── narration.wav           # Raw clean voice narration track
-│       ├── captions.ass            # Styled ASS kinetic subtitle file
-│       ├── captions.srt            # Standard SubRip subtitle track
-│       ├── script.json             # Structured script, hooks, and claims
-│       ├── script.txt              # Plain spoken words
-│       ├── sources.json            # Discovered sources and URLs
-│       ├── source_manifest.json    # Verified EvidenceBundleSchema
-│       ├── scene_plan.json         # Beat-by-beat scene layout
-│       ├── qc.json                 # ffprobe Technical QC report
-│       └── metadata.json           # Title options, description, tags
-└── ready-to-upload/
-    └── 2026-10-13_why-local-ai-can-run-without-sending-your-prompt-job366.mp4
+1. Click "ChatGPT Assets" on any Short in the Queue
+                         ↓
+2. Copy the generated prompt (Tab 1)
+                         ↓
+3. Paste into ChatGPT Plus (Web Search + DALL-E 3)
+                         ↓
+4. Copy ChatGPT's output & paste back into LocalShorts Studio
+                         ↓
+5. Studio auto-downloads, converts images to 1080x1920 (blur-padded),
+   and automatically re-renders the final Short into READY state!
 ```
 
 ---
 
-## 🛠️ Testing & Release Packaging
+## 📁 Project Structure
 
-### Running Automated Tests
+```
+localshorts-studio/
+├── .venv/                      # Isolated Python 3.11 virtual environment
+├── assets/
+│   ├── fonts/                  # OFL kinetic caption fonts (Archivo Black, Barlow, Roboto)
+│   └── sfx/                    # CC0 procedural sound effects (impact, whoosh, pop, click, riser)
+├── bin/                        # Portable Windows binaries (ffmpeg.exe, ffprobe.exe)
+├── cache/                      # Cached media plates and downloaded stock images
+├── data/
+│   ├── localshorts.db          # SQLite WAL database (Jobs, Trends, Settings, Scripts)
+│   └── hardware_snapshot.json  # Last detected hardware profile
+├── output/                     # Production output
+│   ├── YYYY-MM-DD/{slug}/      # Complete project archive (video, audio, subtitles, QC)
+│   └── ready-to-upload/        # Final QC-approved MP4 files ready for YouTube Shorts
+├── src/localshorts/
+│   ├── api/                    # FastAPI routes (health, generation, trends, settings, views)
+│   ├── models/                 # Pydantic schemas and SQLModel tables
+│   ├── services/               # Pipeline services
+│   │   ├── audio_mixer.py      # CC0 audio ducking and LUFS normalization
+│   │   ├── captions.py         # ASS/SRT kinetic subtitle builder
+│   │   ├── confidence.py       # Source confidence & evidence scoring
+│   │   ├── ffmpeg_builder.py   # FFmpeg command generator (NVENC / CPU)
+│   │   ├── hardware.py         # Dynamic hardware profiler & thermal monitor
+│   │   ├── media.py            # ChatGPT asset downloader & 1080x1920 blur padding
+│   │   ├── ollama.py           # Ollama client with VRAM unload management
+│   │   ├── originality.py      # 3-way originality verification gate
+│   │   ├── qc.py               # Technical ffprobe QC inspector
+│   │   ├── scene_planner.py    # Beat-by-beat scene timing planner
+│   │   ├── scripting.py        # 55-80 word script generation & hook filter
+│   │   ├── trends.py           # RSS scraper & trend clustering
+│   │   └── tts.py              # Edge-TTS & Kokoro audio synthesizer
+│   ├── ui/                     # Web interface
+│   │   ├── static/             # CSS (Google Stitch theme) and JS (Whop UI logic)
+│   │   └── templates/          # Jinja2 templates (dashboard, queue, create, settings)
+│   ├── worker/                 # Sequential worker queue & pipeline executor
+│   ├── config.py               # Configuration & directory paths
+│   ├── database.py             # SQLite WAL engine & migrations
+│   └── main.py                 # FastAPI application entrypoint & lifespan
+├── tests/                      # Automated test suite
+│   ├── integration/            # API, database, FFmpeg, and TTS integration tests
+│   └── unit/                   # Captions, hardware, originality, security unit tests
+├── BUILD_RELEASE.bat           # Release packager (ZIP + Setup.exe)
+├── DIAGNOSTICS.bat             # 15-point system diagnostics script
+├── START_LOCAL_SHORTS.bat      # One-click desktop launcher
+├── pyproject.toml              # Project metadata & dependencies
+└── README.md                   # System documentation
+```
+
+---
+
+## 🔌 REST API Reference
+
+The backend exposes a full REST API running on `http://127.0.0.1:8765`:
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/health` | Comprehensive system health, hardware status, and queue state |
+| `GET` | `/api/status-bar` | Compact telemetry status bar for live UI updates |
+| `GET` | `/api/jobs` | List all Shorts production jobs with optional status filter |
+| `POST` | `/api/jobs` | Enqueue a new Short production job |
+| `GET` | `/api/jobs/{id}` | Retrieve details, QC metrics, and scene plan for a job |
+| `POST` | `/api/jobs/{id}/cancel` | Cancel an active or queued job |
+| `POST` | `/api/jobs/{id}/regenerate-stage` | Re-run a specific stage (`script`, `tts`, `captions`, `visuals`, `render`) |
+| `GET` | `/api/jobs/{id}/chatgpt-prompt` | Generate structured visual prompt for ChatGPT Plus |
+| `POST` | `/api/jobs/{id}/import-chatgpt-assets` | Import URLs/text from ChatGPT Plus, re-composite scenes, and re-render |
+| `GET` | `/api/media/stock-search` | Search free stock media across Wikimedia Commons, Pexels, and Pixabay |
+| `POST` | `/api/trends/scan` | Trigger live scan of RSS and creator trends |
+| `POST` | `/api/trends/generate-selected` | Enqueue Shorts from selected trend IDs |
+| `GET` | `/api/settings` | Retrieve active system configuration and hardware profile |
+| `POST` | `/api/settings` | Update settings (default voice, model, daily limit, speech rate) |
+
+---
+
+## 🧪 Automated Testing & Verification
+
+LocalShorts Studio includes a full test suite covering all critical subsystems:
+
 ```powershell
-.\.venv\Scripts\ruff.exe check src tests
-.\.venv\Scripts\pytest.exe -v
-```
-All **29 unit and integration tests** verify:
-- Hardware classification & thermal/battery safety
-- Trend normalization, clustering & missing-signal scoring
-- Source Confidence scoring (0–100) & Evidence Bundle
-- Script word count enforcement (`55–80` words) & banned intro stripping
-- Originality gate (`<= 0.78` 3-gram + RapidFuzz + TF-IDF cosine check)
-- Security slug sanitization & path containment
-- Caption card segmentation & keyword emphasis
-- FFmpeg command builder & NVENC fallback
-- SQLite WAL migrations & crash recovery
-- Live CPU TTS & CC0 audio mixer
-- Real FFmpeg `1080×1920` rendering & `ffprobe` Technical QC
-- FastAPI REST API & server-rendered HTML views
+# Run Ruff linter
+.\.venv\Scripts\python.exe -m ruff check src tests
 
-### Building Portable ZIP & Windows Installer
-Double-click or run:
-```cmd
-BUILD_RELEASE.bat
+# Run full pytest suite
+.\.venv\Scripts\python.exe -m pytest -v
 ```
-Generates:
-- `dist/LocalShortsStudio-Windows-x64-portable.zip`
-- `dist/LocalShortsStudio-Setup-x64.exe`
-- `dist/SHA256SUMS.txt`
+
+### Test Coverage (32 / 32 Passed)
+- **FastAPI Endpoints**: Health, status bar, settings, HTML views.
+- **SQLite Database**: WAL mode, forward migrations, and crash recovery.
+- **Live FFmpeg Render & QC**: Real 1080×1920 video render and ffprobe verification.
+- **TTS Synthesis**: Edge-TTS online voices, Kokoro ONNX fallback, and audio mixer.
+- **Captions & Typography**: Word-level emphasis, kinetic ASS/SRT formatting.
+- **Source Confidence**: Domain authority, evidence bundles, and speculation penalties.
+- **Originality Gate**: Token similarity and TF-IDF distance checks.
+- **Security & Paths**: Path traversal blocking and URL SSRF protection.
+- **Hardware & Safety**: Profile classification, thermal thresholds, and battery guard.
+
+---
+
+## ❓ Troubleshooting & FAQ
+
+### 1. Ollama is not detected or says "Offline"
+- Make sure Ollama is installed and running:
+  ```powershell
+  ollama serve
+  ```
+- Test connectivity:
+  ```powershell
+  curl http://127.0.0.1:11434/api/tags
+  ```
+- Ensure the recommended model is downloaded:
+  ```powershell
+  ollama pull qwen3:4b
+  ```
+
+### 2. FFmpeg NVENC error on older hardware
+- If your system does not have an NVIDIA GPU or lacks NVENC support, the engine automatically falls back to CPU encoding (`libx264`).
+- You can manually force CPU encoding in **Settings** (`/settings`) under **Rendering Options**.
+
+### 3. Voice generation fails when offline
+- Edge-TTS requires an internet connection for Microsoft's free neural voices.
+- If you are offline, LocalShorts Studio automatically switches to **Kokoro ONNX** or **Windows SAPI / System.Speech** so you can continue rendering completely offline.
+
+### 4. Video shows blurred sides around images
+- This is intentional! YouTube Shorts require a vertical `9:16` (`1080×1920`) aspect ratio. When horizontal `16:9` images are imported from ChatGPT or stock sources, the engine pads them with a blurred mirrored backdrop instead of adding ugly black bars or cropping out crucial parts of the image.
 
 ---
 
 ## 📜 License & Attributions
 
 - **LocalShorts Studio**: Licensed under the [MIT License](LICENSE).
-- **Audio Assets**: The 5 procedural sound effects in `assets/sfx/` (`impact.wav`, `whoosh.wav`, `pop.wav`, `click.wav`, `riser.wav`) are synthesized mathematically using NumPy and released under **CC0 1.0 Universal (Public Domain)**.
-- **Fonts**: Caption fonts in `assets/fonts/` (`Archivo Black`, `Barlow Condensed`, `Roboto Condensed`) are licensed under the **SIL Open Font License (OFL) / Apache 2.0**.
+- **Procedural Audio**: The 5 sound effects in `assets/sfx/` (`impact.wav`, `whoosh.wav`, `pop.wav`, `click.wav`, `riser.wav`) are synthesized mathematically using NumPy and dedicated to the **Public Domain (CC0 1.0 Universal)**.
+- **Kinetic Fonts**: `Archivo Black`, `Barlow Condensed`, and `Roboto Condensed` are licensed under the **SIL Open Font License (OFL) / Apache 2.0**.
+- **Icons & Theme**: Google Stitch and Whop Clipping design patterns utilized under fair-use creator tool styling guidelines.
